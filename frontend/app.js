@@ -1,0 +1,3516 @@
+﻿
+// ===== 状态 =====
+let customers = [];
+let selectedCustomerId = null;
+let messages = [];
+let allModels = [];
+let defaultModelId = '';
+let currentModelLabel = '';
+// 图片选择状态
+let selectedImageIds = new Set();
+let expandedImageId = null;
+
+// ===== API 工具 =====
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    const err = await r.text().catch(() => r.statusText);
+    throw new Error(`HTTP ${r.status}: ${err.slice(0,100)}`);
+  }
+  return r.json();
+}
+function escapeHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ===== Toast =====
+function showToast(msg) {
+  const t = document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2500);
+}
+
+// ===== 弹窗 =====
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).style.display='flex'; }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).style.display='none'; }
+
+// 自定义确认弹窗（替代原生 confirm）
+function showConfirm(msg, title='确认操作') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card" style="width:400px">
+        <div class="modal-header"><h3>${escapeHtml(title)}</h3></div>
+        <div class="modal-body" style="font-size:14px;line-height:1.6">${escapeHtml(msg)}</div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="confirmNo">取消</button>
+          <button class="btn btn-danger" id="confirmYes">确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#confirmYes').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#confirmNo').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+  });
+}
+
+// 自定义输入弹窗（替代原生 prompt）
+function showPrompt(msg, defaultValue='', title='输入') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card" style="width:450px">
+        <div class="modal-header"><h3>${escapeHtml(title)}</h3></div>
+        <div class="modal-body">
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">${escapeHtml(msg)}</div>
+          <input id="promptInput" class="form-input" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none" value="${escapeHtml(defaultValue)}">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="promptCancel">取消</button>
+          <button class="btn btn-primary" id="promptOk">确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#promptInput');
+    input.focus();
+    input.select();
+    overlay.querySelector('#promptOk').onclick = () => { overlay.remove(); resolve(input.value); };
+    overlay.querySelector('#promptCancel').onclick = () => { overlay.remove(); resolve(null); };
+    input.onkeydown = e => { if (e.key === 'Enter') { overlay.remove(); resolve(input.value); } };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(null); } };
+  });
+}
+
+// 自定义提示弹窗（替代原生 alert）
+function showAlert(msg, title='提示') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card" style="width:400px">
+        <div class="modal-header"><h3>${escapeHtml(title)}</h3></div>
+        <div class="modal-body" style="font-size:14px;line-height:1.6">${escapeHtml(msg)}</div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="alertOk">知道了</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#alertOk').onclick = () => { overlay.remove(); resolve(); };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(); } };
+  });
+}
+
+// 图片生成失败弹窗（含重试按钮）
+function showGenError(desc, errorMsg, onRetry) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-card" style="width:450px">
+      <div class="modal-header"><h3>⚠️ 图片生成失败</h3></div>
+      <div class="modal-body">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">${escapeHtml(desc)}</div>
+        <div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:12px;font-size:13px;color:#c62828;line-height:1.5">
+          ${errorMsg || '所有模型均生成失败'}
+        </div>
+      </div>
+      <div class="modal-footer">
+        ${onRetry ? '<button class="btn btn-primary" id="genRetryBtn">🔄 重试</button>' : ''}
+        <button class="btn btn-outline" id="genCloseBtn">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (onRetry) overlay.querySelector('#genRetryBtn').onclick = () => { overlay.remove(); onRetry(); };
+  overlay.querySelector('#genCloseBtn').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+// ===== 页面切换 =====
+function showPage(page) {
+  const ca = document.getElementById('chatArea');
+  if (ca) {
+    ca.style.display = page === 'chat' ? 'flex' : 'none';
+    ca.classList.toggle('hidden', page !== 'chat');
+  }
+  
+  const kb = document.getElementById('pageKnowledge');
+  kb.style.display = page === 'knowledge' ? 'flex' : 'none';
+  kb.classList.toggle('hidden', page !== 'knowledge');
+  
+  const st = document.getElementById('pageSettings');
+  st.style.display = page === 'settings' ? 'block' : 'none';
+  st.classList.toggle('hidden', page !== 'settings');
+  
+  const ii = document.getElementById('pageImageIndex');
+  ii.style.display = page === 'imageindex' ? 'flex' : 'none';
+  ii.classList.toggle('hidden', page !== 'imageindex');
+  
+  // 按钮高亮
+  document.querySelectorAll('.header-right .btn-icon').forEach(b=>b.classList.remove('active'));
+  if (page === 'knowledge') document.getElementById('btnKnowledge').classList.add('active');
+  if (page === 'settings') document.getElementById('btnSettings').classList.add('active');
+}
+
+// ===== 客户列表（三大类折叠） =====
+let customerGroups = [];
+let expandedCategories = new Set();
+
+async function loadCustomers(search = '') {
+  try {
+    if (search) {
+      const r = await api('GET', '/api/customers' + (search ? '?search='+encodeURIComponent(search) : ''));
+      customers = r.customers || [];
+      renderCustomerList();
+    } else {
+      const r = await api('GET', '/api/customers/grouped');
+      customerGroups = r.groups || [];
+      customers = [];
+      renderCustomerList();
+    }
+  } catch(e) { showToast('加载客户失败: '+e.message); }
+}
+function toggleCategory(catId) {
+  const body = document.getElementById('catBody_'+catId);
+  const arrow = document.getElementById('catArrow_'+catId);
+  if (!body) return;
+  const isExpanded = body.classList.contains('expanded');
+  if (isExpanded) {
+    body.classList.remove('expanded');
+    if (arrow) arrow.classList.remove('expanded');
+    expandedCategories.delete(catId);
+  } else {
+    body.classList.add('expanded');
+    if (arrow) arrow.classList.add('expanded');
+    expandedCategories.add(catId);
+  }
+}
+function renderCustomerItem(c) {
+  return `<div class="sidebar-item ${c.id === selectedCustomerId ? 'active':''}" data-cid="${c.id}" onclick="selectCustomer(${c.id})">
+    <div class="top-row">
+      <div class="name">${escapeHtml(c.name)}${c.title ? ' ('+escapeHtml(c.title)+')' : ''}</div>
+      <div class="customer-actions">
+        <button onclick="event.stopPropagation();editCustomer(${c.id})" title="编辑">✏️</button>
+        <button class="del-icon" onclick="event.stopPropagation();deleteCustomer(${c.id})" title="删除">🗑️</button>
+      </div>
+    </div>
+    <div class="preview">${escapeHtml(c.purchase || '')}${c.remark ? ' · '+escapeHtml(c.remark.slice(0,20)): ''}</div>
+  </div>`;
+}
+function renderCustomerList() {
+  const el = document.getElementById('customerList');
+  const searchVal = document.getElementById('customerSearch').value.trim();
+  if (searchVal) {
+    if (!customers.length) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary)">无匹配客户</div>';
+      return;
+    }
+    el.innerHTML = customers.map(c => renderCustomerItem(c)).join('');
+    return;
+  }
+  if (!customerGroups || !customerGroups.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary)">暂无客户<br><button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="showAddCustomer()">➕ 新建客户</button></div>';
+    return;
+  }
+  const icons = { cid: '🔵', treatment: '🟢', package: '🟠' };
+  el.innerHTML = customerGroups.map(g => {
+    const catId = g.id;
+    const isEmpty = g.customers.length === 0;
+    const icon = icons[catId] || '🔵';
+    return `
+    <div class="category-group">
+      <div class="category-header" onclick="toggleCategory('${catId}')">
+        <span class="arrow" id="catArrow_${catId}">▶</span>
+        <span class="cat-label">${icon} ${g.label}</span>
+        <span class="cat-count">${g.count}</span>
+      </div>
+      <div class="category-body" id="catBody_${catId}">
+        ${isEmpty ? '<div style="padding:10px 22px;font-size:12px;color:var(--text-secondary)">暂无客户</div>' :
+          g.customers.map(c => renderCustomerItem(c)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  // 恢复展开状态
+  setTimeout(function() {
+    expandedCategories.forEach(function(catId) {
+      const body = document.getElementById('catBody_'+catId);
+      const arrow = document.getElementById('catArrow_'+catId);
+      if (body) body.classList.add('expanded');
+      if (arrow) arrow.classList.add('expanded');
+    });
+  }, 0);
+}
+function selectCustomer(id) {
+  selectedCustomerId = id;
+  // 只更新高亮，不重新渲染整个列表（防止折叠/滚动丢失）
+  document.querySelectorAll('.sidebar-item').forEach(
+// ===== 客户画像 =====
+async function loadCustomerProfile(id) {
+  try {
+    const profile = await api('GET', '/api/customers/' + id + '/profile');
+    // 更新客户信息卡片
+    const infoEl = document.getElementById('customerProfileInfo');
+    if (!infoEl) return;
+    if (!profile) { infoEl.innerHTML = ''; return; }
+    
+    let html = '<div style="padding:8px 16px;background:#f9f9f9;border-bottom:1px solid #eee;font-size:12px">';
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap">';
+    
+    // 基础信息
+    let infoItems = [];
+    if (profile.age) infoItems.push('年龄: ' + profile.age + '岁');
+    if (profile.weight) infoItems.push('体重: ' + profile.weight + '斤');
+    if (profile.purchase) infoItems.push('购买: ' + profile.purchase);
+    if (profile.msg_count > 0) {
+      infoItems.push('消息: ' + profile.msg_count + '条');
+      infoItems.push('已联系 ' + profile.user_msg_count + ' 次');
+    }
+    if (profile.image_count > 0) infoItems.push('图片: ' + profile.image_count + '张');
+    
+    if (infoItems.length > 0) {
+      html += infoItems.map(function(item) {
+        return '<span style="background:#e8f5e9;padding:2px 10px;border-radius:10px;color:#2e7d32">' + item + '</span>';
+      }).join('');
+    }
+    
+    if (profile.remark) {
+      html += '<span style="color:#666;font-size:11px">备注: ' + escapeHtml(profile.remark.substring(0, 30)) + '</span>';
+    }
+    
+    html += '</div></div>';
+    infoEl.innerHTML = html;
+  } catch(e) {
+    // 静默失败
+  }
+}
+function(el) { el.classList.remove('active'); });
+  // 找到目标客户并高亮（支持 data-cid 和 id 两种方式）
+  var target = document.querySelector('.sidebar-item[data-cid="' + id + '"]');
+  if (target) {
+    target.classList.add('active');
+    // 同时展开所在分类
+    var catBody = target.closest('.category-body');
+    if (catBody && !catBody.classList.contains('expanded')) {
+      catBody.classList.add('expanded');
+      var catId = catBody.id.replace('catBody_','');
+      var arrow = document.getElementById('catArrow_'+catId);
+      if (arrow) arrow.classList.add('expanded');
+      if (catId) expandedCategories.add(catId);
+    }
+  }
+  showPage('chat');
+  loadMessages(id);
+  document.getElementById('imagePreviewArea').innerHTML = '';
+  // 加载客户画像
+  loadCustomerProfile(id);
+}
+async function editCustomer(id) {
+  try {
+    const r = await api('GET', `/api/customers/${id}`);
+    const c = r.customer || {};
+    document.getElementById('customerDialogTitle').textContent = '编辑客户';
+    document.getElementById('editCustomerId').value = id;
+    document.getElementById('smartParseInput').value = '';
+    document.getElementById('dlgName').value = c.name || '';
+    document.getElementById('dlgTitle').value = c.title || '';
+    document.getElementById('dlgAge').value = c.age || '';
+    document.getElementById('dlgHeight').value = c.height || '';
+    document.getElementById('dlgWeight').value = c.weight || '';
+    document.getElementById('dlgTargetWeight').value = c.target_weight || '';
+    document.getElementById('dlgPurchase').value = c.purchase || '';
+    document.getElementById('dlgCustomerType').value = c.customer_type || '';
+    if (!c.customer_type) autoCalcCustomerType();
+    document.getElementById('dlgRemark').value = c.remark || '';
+    showModal('customerDialog');
+  } catch(e) { showToast('加载客户信息失败'); }
+}
+async function deleteCustomer(id) {
+  const ok = await showConfirm('确定删除此客户及其所有聊天记录？此操作不可恢复！', '删除客户');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/customers/${id}`);
+    if (selectedCustomerId === id) { selectedCustomerId = null; document.getElementById('chatContainer').innerHTML = ''; }
+    await loadCustomers(document.getElementById('customerSearch').value);
+    showToast('已删除');
+  } catch(e) { showToast('删除失败'); }
+}
+
+// ===== 客户图片管理 =====
+async function showCustomerImages() {
+  if (!selectedCustomerId) { showToast('请先选择客户'); return; }
+  await loadCustomerImages();
+  showModal('imageModal');
+}
+async function loadCustomerImages() {
+  const gallery = document.getElementById('imageGallery');
+  if (!selectedCustomerId) { gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">请先选择客户</div>'; return; }
+  try {
+    const r = await api('GET', `/api/customers/${selectedCustomerId}/images`);
+    const images = r.images || [];
+    if (images.length === 0) {
+      gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">暂无图片，点击上方按钮上传</div>';
+      return;
+    }
+    gallery.innerHTML = images.map(img => {
+      const desc = img.description ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${img.description.substring(0, 60)}</div>` : '';
+      return `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-surface)">
+        <img src="/api/customers/images/${img.id}/file" style="width:100%;height:150px;object-fit:cover;display:block" onclick="window.open('/api/customers/images/${img.id}/file')">
+        <div style="padding:6px 8px">
+          <div style="font-size:11px;color:var(--text-secondary)">${img.original_name || img.filename}</div>
+          ${desc}
+          <div style="margin-top:4px"><button class="btn btn-sm btn-danger" onclick="deleteCustomerImage('${img.id}')" style="font-size:10px;padding:2px 8px">删除</button></div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { gallery.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败</div>'; }
+}
+async function uploadCustomerImage(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length || !selectedCustomerId) return;
+  await uploadImageFiles(files);
+  event.target.value = ''; // 清空 input 以便下次选择同一文件
+}
+
+async function uploadImageFromClipboard(items) {
+  // 从剪贴板项目提取图片文件
+  const imageFiles = [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const blob = item.getAsFile ? item.getAsFile() : item;
+      if (blob) {
+        // 给 blob 一个合理的文件名
+        const ext = blob.type.split('/')[1] || 'png';
+        const file = new File([blob], `paste_${Date.now()}.${ext}`, { type: blob.type });
+        imageFiles.push(file);
+      }
+    }
+  }
+  if (!imageFiles.length) return false;
+  await uploadImageFiles(imageFiles);
+  return true;
+}
+
+async function uploadImageFiles(files) {
+  // 最多9张
+  const filesToUpload = files.slice(0, 9);
+  if (files.length > 9) {
+    showToast('最多上传9张图片，已自动截取前9张');
+  }
+  if (!selectedCustomerId) {
+    showToast('请先选择一个客户');
+    return;
+  }
+  const btn = document.getElementById('btnSend');
+  const imgBtn = document.getElementById('btnImgUpload');
+  btn.disabled = true;
+  imgBtn.disabled = true;
+
+  const previewArea = document.getElementById('imagePreviewArea');
+
+  // 第一步：所有图片立即显示缩略图 + 加载状态 + 删除按钮
+  const previewItems = [];
+  const uploadStatuses = {};  // previewId → 'pending'|'uploading'|'uploaded'|'cancelled'
+  for (let i = 0; i < filesToUpload.length; i++) {
+    const file = filesToUpload[i];
+    const previewId = 'preview_' + Date.now() + '_' + i;
+    const previewDiv = document.createElement('div');
+    previewDiv.className = 'preview-item';
+    previewDiv.id = previewId;
+
+    // 用 FileReader 显示本地缩略图
+    const reader = new FileReader();
+    await new Promise((resolve) => {
+      reader.onload = function(e) {
+        // 加载状态（spinner + 可删除）
+        previewDiv.innerHTML = '<img src="' + e.target.result + '"><div class="loading-overlay"><div class="spinner"></div></div><button class="remove-btn" title="取消上传">✕</button>';
+        const rmBtn = previewDiv.querySelector('.remove-btn');
+        rmBtn.onclick = function() { cancelImageUpload(previewId); };
+        previewArea.appendChild(previewDiv);
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+    previewItems.push({ previewId, file });
+    uploadStatuses[previewId] = 'pending';
+  }
+  // 滚动到预览区
+  previewItems[0] && document.getElementById(previewItems[0].previewId)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // 取消上传（加载中或上传中的图片）
+  function cancelImageUpload(previewId) {
+    if (!uploadStatuses[previewId]) return;  // 已经完成或已删除
+    uploadStatuses[previewId] = 'cancelled';
+    const el = document.getElementById(previewId);
+    if (el) el.remove();
+    // 从 previewItems 中移除（阻止后续上传）
+    const idx = previewItems.findIndex(p => p.previewId === previewId);
+    if (idx >= 0) previewItems.splice(idx, 1);
+  }
+
+  // 第二步：逐张上传（顺序执行，跳过已取消的）
+  for (let i = 0; i < previewItems.length; i++) {
+    const { previewId, file } = previewItems[i];
+    // 跳过已取消的
+    if (uploadStatuses[previewId] === 'cancelled') continue;
+    uploadStatuses[previewId] = 'uploading';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/customers/' + selectedCustomerId + '/images', { method: 'POST', body: formData });
+      // 上传过程中被取消？跳过
+      if (uploadStatuses[previewId] === 'cancelled') {
+        uploadStatuses[previewId] = 'cancelled';
+        const el = document.getElementById(previewId);
+        if (el) el.remove();
+        continue;
+      }
+      const result = await resp.json();
+      const imgData = result.image || {};
+      const imgId = imgData.id;
+      if (imgId) {
+        uploadStatuses[previewId] = 'uploaded';
+        recentlyUploadedImageIds.push(imgId);
+        if (imgData.description) {
+          recentlyUploadedImageInfos.push({ id: imgId, description: imgData.description });
+        }
+        // 更新预览：去掉加载框，保留删除按钮
+        const existing = document.getElementById(previewId);
+        if (existing) {
+          const imgEl = existing.querySelector('img');
+          existing.innerHTML = '';
+          if (imgEl) existing.appendChild(imgEl.cloneNode());
+          const rmBtn = document.createElement('button');
+          rmBtn.className = 'remove-btn';
+          rmBtn.textContent = '✕';
+          rmBtn.title = '删除图片';
+          rmBtn.onclick = function() { removeImagePreview(previewId, imgId); };
+          existing.appendChild(rmBtn);
+        }
+      }
+    } catch(e) {
+      if (uploadStatuses[previewId] === 'cancelled') continue;
+      // 识别失败：显示 ✕
+      const failed = document.getElementById(previewId);
+      if (failed) {
+        failed.innerHTML = failed.innerHTML.replace('<div class="loading-overlay"><div class="spinner"></div></div>', '<div class="fail-overlay">✕</div>');
+      }
+      console.warn('图片上传/识别失败:', e);
+    }
+  }
+  // 图片上传完成后，自动填充描述到输入框
+  autoFillImageDescriptions();
+
+  btn.disabled = false;
+  imgBtn.disabled = false;
+}
+// 移除图片预览（全局函数，供内联 onclick 调用）
+async function removeImagePreview(previewId, imgId) {
+// 从 DOM 移除预览
+const el = document.getElementById(previewId);
+if (el) el.remove();
+// 从内存中移除
+const idx = recentlyUploadedImageIds.indexOf(imgId);
+if (idx >= 0) recentlyUploadedImageIds.splice(idx, 1);
+// 从描述数组中移除
+const infoIdx = recentlyUploadedImageInfos.findIndex(i => i.id === imgId);
+if (infoIdx >= 0) recentlyUploadedImageInfos.splice(infoIdx, 1);
+// 从后端删除图片记录
+try {
+await api('DELETE', `/api/customers/images/${imgId}`);
+} catch(e) { /* ignore */ }
+}
+  async function deleteCustomerImage(imgId) {
+  const ok = await showConfirm('确定删除此图片？', '删除图片');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/customers/images/${imgId}`);
+    await loadCustomerImages();
+    showToast('已删除');
+  } catch(e) { showToast('删除失败'); }
+}
+
+// ===== 消息 =====
+async function loadMessages(customerId) {
+  try {
+    const r = await api('GET', `/api/customers/${customerId}/messages`);
+    messages = (r.messages || []).map(m => {
+      // 如果消息内容包含 [生成图片:] 标记，尝试从 localStorage 映射替换
+      if (m.content && m.content.indexOf('[生成图片:') !== -1) {
+        try {
+          const map = JSON.parse(localStorage.getItem('genImageMap') || '{}');
+          let hasReplacement = false;
+          m.content = m.content.replace(/\[生成图片:\s*(.*?)\]/g, function(match, desc) {
+            if (map[desc]) {
+              hasReplacement = true;
+              // 同步到后端
+              fetch('/api/image_map', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ desc, filename: map[desc] })
+              }).catch(() => {});
+              return '[AI图片:' + map[desc] + ':' + desc + ']';
+            }
+            return match;
+          });
+        } catch(e) {}
+      }
+      // 后端加载时，AI消息解析为代码块格式
+      if (m.role === 'assistant' && m.content) {
+        if (m.content.includes('---')) {
+          // 含 --- 分隔的多段话术
+          const parts = m.content.split(/---/).map(p => p.trim()).filter(p => p);
+          if (parts.length > 0) {
+            m._parts = parts;
+          } else {
+            m._parts = [m.content];
+          }
+        } else {
+          // 单段话术，同样显示为代码块样式
+          m._parts = [m.content];
+        }
+        m._expanded = true;
+      }
+      return m;
+    });
+    renderMessages();
+  } catch(e) { showToast('加载消息失败: '+e.message); }
+}
+function renderMessages() {
+  const el = document.getElementById('chatContainer');
+  if (!messages.length) {
+    el.innerHTML = '<div class="chat-empty" id="chatEmpty" style="display:flex"><div class="icon">💬</div><div>请选择一个客户开始沟通</div></div>';
+    return;
+  }
+  el.innerHTML = messages.map((m, idx) => {
+    // 新格式：含 --- 分隔的多段话术（代码块样式）
+    if (m.role === 'assistant' && m._loading) {
+      return `
+      <div class="chat-msg ai" id="msg_${idx}">
+        <div class="thinking-dots">
+          <span class="think-dot"></span>
+          <span class="think-dot"></span>
+          <span class="think-dot"></span>
+          <span class="hint">思考中...</span>
+        </div>
+      </div>`;
+    }
+    if (m.role === 'assistant' && m._parts && m._parts.length > 0) {
+      const isCollapsed = !m._expanded;
+      return `
+      <div class="chat-msg ai" id="msg_${idx}">
+        <div class="script-bubble ${isCollapsed ? 'collapsed' : ''}" id="sb_${idx}">
+          ${m._parts.map((p, pi) => {
+                      // 检测是否为纯图片块
+                      const trimmed = p.trim();
+                      const isPureImage = /^\[AI图片:[^:]+:[^\]]*\]$/.test(trimmed);
+                                            if (isPureImage) {
+                                                                                          const match = trimmed.match(/^\[AI图片:([^:]+):([^\]]*)\]$/);
+                                                                                          const filename = match ? match[1] : '';
+                                                                                          const desc = match ? match[2] : '';
+                                                                                          const imgId = 'genimg_' + filename;
+                                                                                          const isSelected = selectedImageIds.has(imgId);
+                                                                                          const isExpanded = expandedImageId === imgId;
+                                                                                          // 查找相似图片
+                                                                                          var simHtml = '';
+                                                                                          if (m._local_matches && m._local_matches.length > 0) {
+                                                                                            simHtml = renderSimilarImages(m._local_matches);
+                                                                                          }
+                                                                                          return `
+                                                                                      <div class="script-block generated-image-card">
+                                                                                        <div class="script-block-header" style="justify-content:space-between">
+                                                                                          <span style="font-size:12px;color:#999">📷 生成图片</span>
+                                                                                          <div style="display:flex;gap:4px">
+                                                                                            <button class="gen-replace-btn" onclick="replaceImage(${idx},${pi},'${filename}','${desc}')">🔄 替换</button>
+                                                                                            <button class="cp-btn" onclick="copyGenImage('${filename}','${desc}')" title="复制图片到剪贴板">📋</button>
+                                                                                          </div>
+                                                                                        </div>
+                                                                                        <div class="generated-image-content" style="position:relative">
+                                                                                          <div style="position:absolute;top:6px;right:6px;z-index:2">
+                                                                                            <input type="checkbox" class="img-select-checkbox" ${isSelected ? 'checked' : ''} onchange="toggleImageSelect('${imgId}','${filename}','${desc.replace(/'/g, "\\'")}')" style="width:18px;height:18px;cursor:pointer;accent-color:#0071e3">
+                                                                                          </div>
+                                                                                          <img src="/api/generated_images/${filename}" alt="${desc}" onclick="toggleImageExpand('${imgId}')" loading="lazy" style="max-width:100%;max-height:${isExpanded ? 'none' : '400px'};border-radius:4px;cursor:pointer;width:${isExpanded ? '100%' : 'auto'};display:block">
+                                                                                          <div class="generated-image-desc">${escapeHtml(desc)}</div>
+                                                                                          ${simHtml}
+                                                                                        </div>
+                                                                                      </div>
+                                                                                      </div>`;
+                                            }
+                                            // 检测待生成的图片标记（支持部分包含）
+                                            const imgMatch = trimmed.match(/\[生成图片:\s*(.*?)\]/);
+                                            const isPendingImg = imgMatch !== null;
+                                            if (isPendingImg) {
+                                                                                          const imgDesc = imgMatch[1];
+                                                                                          const taskId = 'genimg_' + idx + '_' + pi;
+                                                                                          // 查找相似图片
+                                                                                          var pendingSimHtml = '';
+                                                                                          if (m._pending_image_matches && m._pending_image_matches[imgDesc]) {
+                                                                                            pendingSimHtml = renderSimilarImageThumbs(m._pending_image_matches[imgDesc]);
+                                                                                          }
+                                                                                          // 占位符：灰色背景框 + 取消按钮
+                                                                                          return `
+                                                                                      <div class="gen-progress-card gen-placeholder-card" id="${taskId}">
+                                                                                        <div class="gen-progress-header">
+                                                                                          <span style="font-size:12px;color:#999">🖼️ 生成图片</span>
+                                                                                          <button class="gen-action-btn gen-cancel-btn" id="${taskId}_cancel" onclick="cancelGenImg('${taskId}')">✕ 取消</button>
+                                                                                        </div>
+                                                                                        <div class="gen-prompt-box">${escapeHtml(imgDesc)}</div>
+                                                                                        ${pendingSimHtml}
+                                                                                        <div class="gen-progress-bar" style="margin-top:8px">
+                                                                                          <div class="fill" id="${taskId}_bar" style="width:0%"></div>
+                                                                                        </div>
+                                                                                        <div id="${taskId}_status" style="font-size:11px;color:#999;margin-top:4px">准备中 0%</div>
+                                                                                      </div>`;
+                                            }
+                      return `
+                    <div class="script-block">
+                      <div class="script-block-header"><button class="cp-btn" onclick="copyPart(${idx}, ${pi})">📋</button></div>
+                      <div class="script-block-content">${renderAiImages(p)}</div>
+                    </div>`;
+                    }).join('')}
+                    </div>
+                    <div class="msg-actions">
+                      <button onclick="${isCollapsed ? `expandScript(${idx})` : `collapseScript(${idx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
+                      <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+        </div>
+        <div class="time">${escapeHtml(m.timestamp || '')}</div>
+      </div>`;
+    }
+    // 用户消息：白色代码块，顶栏左时间右展开/折叠+删除
+    if (m.role === 'user') {
+      if (!m._parts || m._parts.length === 0) {
+        m._parts = [m.content];
+      }
+      const isCollapsed = !m._expanded;
+      const longContent = m._parts[0].length > 80 || (m._parts[0].split('\n').length > 3);
+      const showFold = longContent;
+      return `
+      <div class="chat-msg user">
+        <div class="script-block" style="margin-bottom:0">
+        <div class="script-block-header" style="justify-content:space-between">
+          <span style="font-size:10px;color:#999">${escapeHtml(m.timestamp || '')}</span>
+          <div>
+            ${showFold ? `<button class="cp-btn" onclick="event.stopPropagation();${isCollapsed ? `expandScript(${idx})` : `collapseScript(${idx})`}">${isCollapsed ? '▾' : '▴'}</button>` : ''}
+            <button class="cp-btn" onclick="event.stopPropagation();copyMessage(${idx})" title="复制">📋</button>
+            <button class="cp-btn" onclick="event.stopPropagation();deleteMessage(${m.id}, ${idx})" style="color:#e53935">🗑️</button>
+          </div>
+        </div>
+        <div class="script-block-content ${isCollapsed && showFold ? 'collapsed' : ''}" id="sbContent_${idx}" style="${isCollapsed && showFold ? 'max-height:4.5em;overflow:hidden' : ''}">${escapeHtml(m._parts[0])}</div>
+        </div>
+      </div>`;
+    }
+    // 旧格式：AI普通文本气泡（兼容老数据）
+    const lines = m.content.split('\n').length;
+    const isLong = lines > 5;
+    return `
+    <div class="chat-msg ai">
+      <div class="msg-content ${isLong ? 'collapsed' : ''}" id="msgContent_${idx}">${escapeHtml(m.content)}</div>
+      <div class="msg-actions">
+        ${isLong ? `<button onclick="toggleMsgExpand(${idx})" id="expandBtn_${idx}">展开 ▾</button>` : ''}
+        <button onclick="copyAiText(${idx})" title="复制">📋</button>
+        <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+      </div>
+      <div class="time">${escapeHtml(m.timestamp || '')}</div>
+    </div>`;
+  }).join('');
+  // 流式输出时自动滚动到底部
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+    el.scrollTop = el.scrollHeight;
+  }
+}
+function toggleMsgExpand(idx) {
+  const content = document.getElementById(`msgContent_${idx}`);
+  const btn = document.getElementById(`expandBtn_${idx}`);
+  if (!content) return;
+  const isCollapsed = content.classList.contains('collapsed');
+  content.classList.toggle('collapsed');
+  if (btn) btn.textContent = isCollapsed ? '收起 ▴' : '展开 ▾';
+}
+async function deleteMessage(msgId, idx) {
+  const ok = await showConfirm('确定删除此消息？', '删除消息');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/messages/${msgId}`);
+    // 用msgId找当前索引，避免idx过期
+    const realIdx = messages.findIndex(m => m.id === msgId);
+    if (realIdx !== -1) {
+      messages.splice(realIdx, 1);
+    }
+    renderMessages();
+  } catch(e) { showToast('删除失败: '+e.message); }
+}
+function copyAiText(idx) {
+  const msg = messages[idx];
+  if (!msg) return;
+  const text = msg.content;
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+function copyMessage(idx) {
+  const msg = messages[idx];
+  if (!msg) return;
+  const text = msg.content || msg._parts?.join('\n---\n') || '';
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+function expandScript(idx) {
+  const m = messages[idx];
+  if (m) m._expanded = true;
+  renderMessages();
+}
+function collapseScript(idx) {
+  const m = messages[idx];
+  if (m) m._expanded = false;
+  renderMessages();
+}
+function copyPart(idx, pi) {
+  const msg = messages[idx];
+  if (!msg) return;
+  const parts = msg._parts || [msg.content];
+  let text = parts[pi] || '';
+  if (!text) return;
+  // 复制时清除 AI图片 标记，只保留描述
+  text = text.replace(/\[AI图片:[^:]+:([^\]]*)\]/g, '（📷 $1）');
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+function copyRaw(text) {
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+// ===== 发送消息 =====
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = getInputText();
+  if (!text || !selectedCustomerId) {
+    if (!selectedCustomerId) showToast('请先选择一个客户');
+    return;
+  }
+  
+  // 禁用按钮
+  const btn = document.getElementById('btnSend');
+  btn.disabled = true;
+  
+  // 立即清除图片预览（不等大模型返回）
+    document.getElementById('imagePreviewArea').innerHTML = '';
+  // 加载客户画像
+  loadCustomerProfile(id);
+    recentlyUploadedImageIds = [];
+    recentlyUploadedImageInfos = [];
+    _lastInputLen = 0;
+  
+  // 固化当前客户ID和会话ID（防止中途切换客户导致丢失）
+  const currentCid = selectedCustomerId;
+  const sessionId = 'c' + currentCid + '_' + Date.now();
+  
+  // 显示用户消息
+  const d = new Date();
+  const ts = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+  const userMsg = { role: 'user', content: text, _parts: [text], timestamp: ts, session_id: sessionId };
+  messages.push(userMsg);
+  
+  // 显示加载占位
+  const loadingMsg = { role: 'assistant', _loading: true, id: -Date.now(), timestamp: ts, session_id: sessionId };
+  messages.push(loadingMsg);
+  renderMessages();
+  input.innerHTML = '';
+  autoResize(input);
+  
+  // 保存用户消息到后端（用固化的customerId和sessionId）
+  try {
+    const saved = await api('POST', `/api/customers/${currentCid}/messages`, {
+      role: 'user', content: text, timestamp: ts, session_id: sessionId
+    });
+    if (saved && saved.message && saved.message.id) {
+      userMsg.id = saved.message.id;
+    }
+  } catch(e) { /* 静默 */ }
+  
+  // 生成话术 - 使用流式 SSE
+  try {
+    // 获取设置
+    const settingsResp = await api('GET', '/api/settings');
+    const settings = settingsResp || {};
+    const tags = getTagsFromInput();
+    const imageIds = [...recentlyUploadedImageIds];
+    
+    // 发起 SSE 流式请求
+    const genBody = {
+      customer_id: currentCid,
+      recent_messages: text,
+      settings: settings,
+      tags: tags,
+      current_time: ts,
+      image_ids: imageIds
+    };
+    
+    const resp = await fetch('/api/generate/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(genBody)
+    });
+    
+    if (!resp.ok) {
+      throw new Error('API请求失败: ' + resp.status);
+    }
+    
+    // 流式读取 SSE
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let accumulatedParts = [];
+    let pendingImagesList = [];
+    let local_matches = [];
+    let pending_image_matches = {};
+    let hasContent = false;
+    
+    // 替换加载占位为流式消息
+    const loadIdx = messages.indexOf(loadingMsg);
+    if (loadIdx !== -1) {
+      messages[loadIdx] = {
+        role: 'assistant',
+        _parts: [],
+        _streaming: true,
+        _expanded: true,
+        _local_matches: [],
+        _pending_image_matches: {},
+        id: -(Date.now()),
+        timestamp: ts,
+        session_id: sessionId
+      };
+      renderMessages();
+    }
+    
+    // 超时保护：如果 90 秒内没有收到 done 信号，自动结束
+    let lastEventTime = Date.now();
+    const STREAM_TIMEOUT = 90000; // 90秒超时
+    
+    while (true) {
+      // 检查超时
+      if (Date.now() - lastEventTime > STREAM_TIMEOUT) {
+        console.warn('SSE stream timeout, auto finishing');
+        reader.cancel();
+        break;
+      }
+      
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      lastEventTime = Date.now(); // 收到数据，重置计时
+      
+      buffer += decoder.decode(value, { stream: true });
+      
+      // 解析 SSE 行
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';  // 保留不完整的行
+      
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          
+          if (event.type === 'text') {
+            hasContent = true;
+            const content = event.content;
+            // 按 --- 分割
+            const segs = content.split(/---/).map(s => s.trim()).filter(s => s);
+            for (const seg of segs) {
+              // 检查是否包含 [生成图片: xxx]
+              if (/\[生成图片:\s*.*?\]/.test(seg)) {
+                const subSegs = seg.split(/(\[生成图片:\s*.*?\])/g);
+                for (const sub of subSegs) {
+                  const t = sub.trim();
+                  if (t) accumulatedParts.push(t);
+                }
+              } else {
+                accumulatedParts.push(seg);
+              }
+            }
+            // 更新消息
+            if (loadIdx !== -1 && messages[loadIdx]) {
+              messages[loadIdx]._parts = [...accumulatedParts];
+              renderMessages();
+            }
+          } else if (event.type === 'image_pending') {
+            hasContent = true;
+            // 添加图片占位
+            accumulatedParts.push('[生成图片: ' + event.description + ']');
+            pendingImagesList.push(event.description);
+            if (loadIdx !== -1 && messages[loadIdx]) {
+              messages[loadIdx]._parts = [...accumulatedParts];
+              renderMessages();
+            }
+          } else if (event.type === 'degraded') {
+            showToast('⚠️ 知识库' + event.content);
+          } else if (event.type === 'error') {
+            showToast('生成失败: ' + event.content);
+            // error 事件后直接终止流，不再等待
+            reader.cancel();
+            break;
+          } else if (event.type === 'done') {
+            local_matches = event.local_matches || [];
+            pending_image_matches = event.pending_image_matches || {};
+          }
+        } catch(e) {
+          // 忽略解析错误
+        }
+      }
+    }
+    
+    // 流结束，处理最终结果
+    if (hasContent && loadIdx !== -1 && messages[loadIdx]) {
+      const scriptContent = accumulatedParts.join('\n---\n');
+      
+      // 保存话术到后端
+      let savedResp = null;
+      try {
+        savedResp = await api('POST', `/api/customers/${currentCid}/messages`, {
+          role: 'assistant', content: scriptContent, timestamp: ts, session_id: sessionId
+        });
+      } catch(e) { /* 静默 */ }
+      
+      const newId = (savedResp && savedResp.message && savedResp.message.id) ? savedResp.message.id : -(Date.now());
+      messages[loadIdx] = {
+        id: newId,
+        role: 'assistant',
+        content: scriptContent,
+        _parts: accumulatedParts,
+        _streaming: false,
+        _expanded: true,
+        _local_matches: local_matches,
+        _pending_image_matches: pending_image_matches,
+        timestamp: ts,
+        session_id: sessionId
+      };
+      renderMessages();
+      
+      // 逐张生成图片
+      if (accumulatedParts.length > 0) {
+        const savedId = (savedResp && savedResp.message && savedResp.message.id) || null;
+        processPendingImages(loadIdx, accumulatedParts, savedId, sessionId, ts, local_matches, pending_image_matches);
+      }
+    } else if (!hasContent) {
+      // 没内容，移除占位
+      const li = messages.indexOf(loadingMsg);
+      if (li !== -1) messages.splice(li, 1);
+      renderMessages();
+      showToast('未生成话术内容');
+    }
+  } catch(e) {
+    const li = messages.indexOf(loadingMsg);
+    if (li !== -1) messages.splice(li, 1);
+    renderMessages();
+    showToast('生成失败: '+e.message);
+  }
+  
+  btn.disabled = false;
+}
+
+// 逐张生成图片（进度条 + 可取消）
+let _genImageTasks = {};  // taskId → {cancelled, msgIdx, msgId}
+
+function cancelGenImg(taskId) {
+  if (_genImageTasks[taskId]) _genImageTasks[taskId].cancelled = true;
+  const card = document.getElementById(taskId);
+  if (card) {
+    // 占位符消失，不再生成
+    card.innerHTML = '<div class="gen-placeholder-box" style="opacity:.4"><div class="gen-placeholder-icon">⏸️</div><div class="gen-placeholder-text">已取消</div></div>';
+  }
+}
+
+async function processPendingImages(loadIdx, parts, savedMsgId, sessionId, ts, local_matches, pending_image_matches) {
+  // 检查是否还停留在当前客户，切了客户就不再生图
+  if (!messages[loadIdx] || messages[loadIdx].session_id !== sessionId) return;
+  
+  // 收集所有待生成图片的 taskId
+  const tasks = [];
+  for (let pi = 0; pi < parts.length; pi++) {
+    const match = parts[pi].trim().match(/^\[生成图片:\s*(.*?)\]$/);
+    if (match) {
+      const taskId = 'genimg_' + loadIdx + '_' + pi;
+      tasks.push({ taskId, desc: match[1], partIdx: pi });
+      _genImageTasks[taskId] = { cancelled: false, msgIdx: loadIdx, msgId: savedMsgId };
+    }
+  }
+  if (tasks.length === 0) return;
+
+  for (const t of tasks) {
+    // 检查是否取消
+    if (_genImageTasks[t.taskId] && _genImageTasks[t.taskId].cancelled) continue;
+    
+    // 进度30%
+    const bar = document.getElementById(t.taskId + '_bar');
+    if (bar) { bar.style.width = '30%'; }
+    const status = document.getElementById(t.taskId + '_status');
+    if (status) { status.textContent = '生成中 30%'; }
+    
+    try {
+      const resp = await fetch('/api/generate_image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: t.desc })
+      });
+      
+      if (_genImageTasks[t.taskId] && _genImageTasks[t.taskId].cancelled) continue;
+      
+      if (!resp.ok) {
+        if (bar) { bar.style.width = '0%'; bar.style.background = '#f44336'; }
+        const status = document.getElementById(t.taskId + '_status');
+        if (status) { status.textContent = '生成失败'; }
+        const btnEl = document.getElementById(t.taskId + '_cancel');
+        if (btnEl) { btnEl.textContent = '失败'; btnEl.disabled = true; }
+        // 显示失败占位图 + 重试按钮
+        const card = document.getElementById(t.taskId);
+        if (card) {
+          card.innerHTML = '<div class="gen-placeholder-box" style="border-color:#f44336;background:#fff5f5"><div class="gen-placeholder-icon">❌</div><div class="gen-placeholder-text" style="color:#c62828">生成失败</div><button class="btn btn-sm" style="margin-top:8px;background:#f44336;color:#fff;border:none;border-radius:4px;padding:6px 16px;cursor:pointer" onclick="retryGenImage(' + loadIdx + ',' + t.partIdx + ',' + "'" + t.desc + "'" + ',' + savedMsgId + ',' + "'" + sessionId + "'" + ',' + "'" + ts + "'" + ')">🔄 重试</button></div>';
+        }
+        continue;
+      }
+      const data = await resp.json();
+      if (!data.filename) continue;
+      
+      // 进度100%
+      if (bar) { bar.style.width = '100%'; bar.style.background = '#4caf50'; }
+      const status2 = document.getElementById(t.taskId + '_status');
+      if (status2) { status2.textContent = '生成成功 100%'; }
+      const btnEl2 = document.getElementById(t.taskId + '_cancel');
+      if (btnEl2) { btnEl2.textContent = '✓'; btnEl2.disabled = true; }
+      
+      // 图片生成完成 - 替换占位符为实际图片
+      const card = document.getElementById(t.taskId);
+      if (card) {
+        const filename = data.filename;
+        const desc = t.desc;
+        var simHtml = '';
+        if (local_matches && local_matches.length > 0) {
+          simHtml = renderSimilarImages(local_matches);
+        }
+        card.classList.add('gen-image-ready');
+        card.innerHTML = `
+          <div class="script-block generated-image-card">
+            <div class="script-block-header" style="justify-content:space-between">
+              <span style="font-size:12px;color:#999">📷 生成图片</span>
+              <div style="display:flex;gap:4px">
+                <button class="gen-replace-btn" onclick="replaceImage(${loadIdx},${t.partIdx},'${filename}','${desc}')">🔄 替换</button>
+                <button class="cp-btn" onclick="copyGenImage('${filename}','${desc}')" title="复制图片到剪贴板">📋</button>
+              </div>
+            </div>
+            <div class="generated-image-content">
+              <img src="/api/generated_images/${filename}" alt="${desc}" onclick="window.open(this.src)" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer">
+              <div class="generated-image-desc">${escapeHtml(desc)}</div>
+              ${simHtml}
+            </div>
+          </div>`;
+      }
+      
+      // 更新消息内容（替换 [生成图片:描述] 为 [AI图片:filename:描述]）
+      if (messages[loadIdx]) {
+        // 更新 _parts
+        if (messages[loadIdx]._parts && messages[loadIdx]._parts[t.partIdx]) {
+          messages[loadIdx]._parts[t.partIdx] = '[AI图片:' + filename + ':' + desc + ']';
+        }
+        // 更新 content
+        if (messages[loadIdx].content) {
+          const oldContent = messages[loadIdx].content;
+          const genTag = '[生成图片:' + desc + ']';
+          const aiTag = '[AI图片:' + filename + ':' + desc + ']';
+          messages[loadIdx].content = oldContent.split(genTag).join(aiTag);
+        }
+        // 保存到 localStorage 作为兜底映射
+        try {
+          const map = JSON.parse(localStorage.getItem('genImageMap') || '{}');
+          map[desc] = filename;
+          localStorage.setItem('genImageMap', JSON.stringify(map));
+        } catch(e) {}
+        // 同步映射到后端（持久化，避免刷新后丢失）
+        fetch('/api/image_map', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ desc, filename })
+        }).catch(() => {});
+        // 更新后端（静默失败，不阻塞）
+        if (savedMsgId) {
+          fetch('/api/messages/' + savedMsgId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: messages[loadIdx].content })
+          }).catch(() => {});
+        }
+      }
+      
+    } catch(e) {
+      if (_genImageTasks[t.taskId] && _genImageTasks[t.taskId].cancelled) continue;
+      const barEl = document.getElementById(t.taskId + '_bar');
+      if (barEl) { barEl.style.width = '0%'; barEl.style.background = '#f44336'; }
+      const btnEl = document.getElementById(t.taskId + '_cancel');
+      if (btnEl) { btnEl.textContent = '失败'; btnEl.disabled = true; }
+    }
+  }
+  
+  // 所有图片处理完毕
+    _genImageTasks = {};
+  }
+
+  // ===== 相似图片展示 & 替换图片 =====
+  function renderSimilarImages(local_matches) {
+    if (!local_matches || local_matches.length === 0) return '';
+    var similarHtml = '<div class="similar-images-section"><div style="font-size:12px;color:#999;margin-bottom:6px">📋 可参考的类似图片</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    var count = 0;
+    for (var mi = 0; mi < local_matches.length && count < 8; mi++) {
+      var matched = local_matches[mi].matched || [];
+      for (var ii = 0; ii < matched.length && count < 8; ii++) {
+        var img = matched[ii];
+        var imgId = img.id;
+        var imgDesc = (img.description || '').slice(0, 30);
+        var imgCat = img.category || '';
+        similarHtml += '<div class="similar-img-thumb" onclick="window.open(\'/api/image-index/images/' + imgId + '\')" title="' + escapeHtml(imgDesc) + '" style="width:60px;height:60px;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid #eee;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999;position:relative">';
+        similarHtml += '<img src="/api/image-index/images/' + imgId + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.textContent=\'📷\'">';
+        similarHtml += '</div>';
+        count++;
+      }
+    }
+    similarHtml += '</div></div>';
+    return similarHtml;
+      }
+
+      // 渲染单组相似图片缩略图（从 pending_image_matches 直接取数组）
+      function renderSimilarImageThumbs(images) {
+        if (!images || images.length === 0) return '';
+        var html = '<div class="similar-images-section"><div style="font-size:11px;color:#999;margin-bottom:4px">📋 本地图库中有类似图片</div><div style="display:flex;gap:4px;flex-wrap:wrap">';
+        var count = 0;
+        for (var i = 0; i < images.length && count < 4; i++) {
+          var img = images[i];
+          var imgId = img.id;
+          var imgDesc = (img.description || '').slice(0, 20);
+          html += '<div class="similar-img-thumb" onclick="window.open(\'/api/image-index/images/' + imgId + '\')" title="' + escapeHtml(img.description || '') + '" style="width:50px;height:50px;border-radius:4px;overflow:hidden;cursor:pointer;border:1px solid #eee;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999">';
+          html += '<img src="/api/image-index/images/' + imgId + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.textContent=\'📷\'">';
+          html += '</div>';
+          count++;
+        }
+        html += '</div></div>';
+        return html;
+      }
+
+      async function replaceImage(msgIdx, partIdx, oldFilename, oldDesc) {
+        // 先获取详细提示词
+        var detailedPrompt = oldDesc;
+        try {
+          var ctxResp = await fetch('/api/generate-image-prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: oldDesc, context: (messages[msgIdx] ? messages[msgIdx]._parts.slice(0,5).join('\\n') : '') })
+          });
+          if (ctxResp.ok) {
+            var ctxData = await ctxResp.json();
+            if (ctxData.detailed_prompt) detailedPrompt = ctxData.detailed_prompt;
+          }
+        } catch(e) { /* 失败则用原描述 */ }
+  
+        var newDesc = await showPrompt('输入新的图片描述（提示词）：\n\n（以下为详细提示词，可修改）', detailedPrompt);
+        if (!newDesc || newDesc.trim() === '') return;
+        newDesc = newDesc.trim();
+  
+      var msg = messages[msgIdx];
+      if (!msg || !msg._parts || !msg._parts[partIdx]) return;
+  
+      // 更新parts中的描述
+            msg._parts[partIdx] = '[生成图片: ' + newDesc + ']';
+
+            // 直接更新DOM中的对应卡片，不重新渲染所有消息
+            var taskId = 'genimg_' + msgIdx + '_' + partIdx;
+            var card = document.getElementById(taskId);
+            var newDescEscaped = escapeHtml(newDesc);
+            if (card) {
+              card.className = 'gen-progress-card gen-placeholder-card';
+              card.innerHTML = '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 生成图片</span><button class="gen-action-btn gen-cancel-btn" id="' + taskId + '_cancel" onclick="cancelGenImg(\'' + taskId + '\')">✕ 取消</button></div><div class="gen-prompt-box">' + newDescEscaped + '</div><div class="gen-progress-bar" style="margin-top:8px"><div class="fill" id="' + taskId + '_bar" style="width:0%"></div></div><div id="' + taskId + '_status" style="font-size:11px;color:#999;margin-top:4px">准备中 0%</div>';
+            } else {
+              // 如果没有找到卡片（DOM结构异常），fallback到重新渲染
+              renderMessages();
+              await new Promise(r => setTimeout(r, 100));
+            }
+  
+      // 生成新图片
+      var taskId = 'genimg_' + msgIdx + '_' + partIdx;
+  
+      try {
+        var bar = document.getElementById(taskId + '_bar');
+        var status = document.getElementById(taskId + '_status');
+        if (bar) { bar.style.width = '30%'; }
+        if (status) { status.textContent = '重新生成中 30%'; }
+  
+        var resp = await fetch('/api/generate_image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: newDesc })
+        });
+  
+        if (!resp.ok) { showToast('图片生成失败'); renderMessages(); return; }
+        var data = await resp.json();
+        if (!data.filename) { showToast('生成失败：无文件名'); renderMessages(); return; }
+  
+        // 更新消息内容
+        var newContent = '[AI图片:' + data.filename + ':' + newDesc + ']';
+        msg._parts[partIdx] = newContent;
+  
+        // 更新后端保存的内容
+                if (msg.content) {
+                  msg.content = msg.content.replace('[生成图片: ' + oldDesc + ']', newContent);
+                  if (msg.id && msg.id > 0) {
+                    fetch('/api/messages/' + msg.id, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content: msg.content })
+                    }).catch(function(){});
+                  }
+                }
+  
+                // 直接更新DOM中的卡片为已生成图片，不重新渲染全部
+                var resultCard = document.getElementById(taskId);
+                if (resultCard) {
+                  resultCard.className = 'gen-progress-card gen-placeholder-card gen-image-ready';
+                  var simHtml = '';
+                  if (msg._pending_image_matches && msg._pending_image_matches[newDesc]) {
+                    simHtml = renderSimilarImageThumbs(msg._pending_image_matches[newDesc]);
+                  }
+                  resultCard.innerHTML = '<div class="script-block generated-image-card"><div class="script-block-header" style="justify-content:space-between"><span style="font-size:12px;color:#999">📷 生成图片</span><div style="display:flex;gap:4px"><button class="gen-replace-btn" onclick="replaceImage(' + msgIdx + ',' + partIdx + ',\'' + data.filename + '\',\'' + newDesc.replace(/'/g, "\\'") + '\')">🔄 替换</button><button class="cp-btn" onclick="copyGenImage(\'' + data.filename + '\',\'' + newDesc.replace(/'/g, "\\'") + '\')" title="复制图片到剪贴板">📋</button></div></div><div class="generated-image-content"><img src="/api/generated_images/' + data.filename + '" alt="' + escapeHtml(newDesc) + '" onclick="window.open(this.src)" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer"><div class="generated-image-desc">' + escapeHtml(newDesc) + '</div>' + simHtml + '</div></div>';
+                } else {
+                  renderMessages();
+                }
+                showToast('✅ 图片已替换');
+              } catch(e) {
+                showToast('替换失败: ' + e.message);
+                // 只重新渲染当前消息，不全部重置
+                renderMessages();
+              }
+    }
+
+  let recentlyUploadedImageIds = [];
+// 最近上传的图片信息（id + description）
+let recentlyUploadedImageInfos = [];
+
+// 渲染带 [AI图片:文件名:描述] 标记的文本为安全HTML
+function renderAiImages(text) {
+  // 先执行 HTML 转义，然后替换 [AI图片:] 标记为 img 标签
+  let safe = escapeHtml(text);
+  safe = safe.replace(/\[AI图片:([^:]+):([^\]]*)\]/g, function(match, filename, desc) {
+    return '<div style="margin:10px 0;text-align:center;background:#f9f9f9;border-radius:8px;padding:8px;border:1px solid #eee"><img src="/api/generated_images/' + encodeURIComponent(filename) + '" alt="' + escapeHtml(desc) + '" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer" onclick="window.open(this.src)" loading="lazy"><div style="margin-top:6px;font-size:12px;color:#666">📷 ' + escapeHtml(desc) + '</div></div>';
+  });
+  return safe;
+}
+
+// 复制生成的图片到剪贴板
+function copyGenImage(filename, desc) {
+  fetch('/api/generated_images/' + encodeURIComponent(filename))
+    .then(r => r.blob())
+    .then(blob => {
+      const item = new ClipboardItem({ [blob.type]: blob });
+      navigator.clipboard.write([item]).then(() => {
+        showToast('图片已复制到剪贴板');
+      }).catch(() => {
+        // fallback: 下载方式
+        const link = document.createElement('a');
+        link.href = '/api/generated_images/' + encodeURIComponent(filename);
+        link.download = desc + '.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('已下载图片（复制剪贴板失败）');
+      });
+    }).catch(() => {
+      showToast('获取图片失败');
+    });
+}
+
+// ===== 图片选择/多选/放大 =====
+// 存储选中的图片信息 {filename, desc}
+let selectedImageItems = [];
+
+function toggleImageSelect(imgId, filename, desc) {
+  if (selectedImageIds.has(imgId)) {
+    selectedImageIds.delete(imgId);
+    selectedImageItems = selectedImageItems.filter(item => item.filename !== filename);
+  } else {
+    selectedImageIds.add(imgId);
+    selectedImageItems.push({filename, desc});
+  }
+  updateImageSelectToolbar();
+}
+
+function toggleImageExpand(imgId) {
+  if (expandedImageId === imgId) {
+    expandedImageId = null;
+  } else {
+    expandedImageId = imgId;
+  }
+  // 重新渲染当前消息
+  renderMessages();
+}
+
+function updateImageSelectToolbar() {
+  const toolbar = document.getElementById('imgSelectToolbar');
+  const countEl = document.getElementById('imgSelectCount');
+  if (!toolbar) return;
+  const count = selectedImageIds.size;
+  if (count > 0) {
+    toolbar.style.display = 'flex';
+    countEl.textContent = '已选 ' + count + ' 张';
+  } else {
+    toolbar.style.display = 'none';
+  }
+}
+
+async function copySelectedImages() {
+  if (selectedImageIds.size === 0) {
+    showToast('请先选择图片');
+    return;
+  }
+  try {
+    // 逐个获取图片 blob
+    const blobs = [];
+    for (const item of selectedImageItems) {
+      const r = await fetch('/api/generated_images/' + encodeURIComponent(item.filename));
+      const blob = await r.blob();
+      blobs.push(blob);
+    }
+    if (blobs.length === 1) {
+      // 单张：直接用 ClipboardItem
+      const item = new ClipboardItem({ [blobs[0].type]: blobs[0] });
+      await navigator.clipboard.write([item]);
+    } else {
+      // 多张：目前浏览器只支持单张复制到剪贴板，多张回退为下载
+      for (let i = 0; i < blobs.length; i++) {
+        const url = URL.createObjectURL(blobs[i]);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = selectedImageItems[i].desc + '.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+      showToast('已下载 ' + blobs.length + ' 张图片（浏览器不支持多张复制到剪贴板）');
+      return;
+    }
+    showToast('图片已复制到剪贴板');
+    // 清除选中状态
+    selectedImageIds.clear();
+    selectedImageItems = [];
+    updateImageSelectToolbar();
+    renderMessages();
+  } catch(e) {
+    showToast('复制失败: ' + e.message);
+  }
+}
+
+
+// 重试生成图片（从失败状态恢复）
+function retryGenImage(msgIdx, partIdx, desc, savedMsgId, sessionId, ts) {
+  const taskId = 'genimg_' + msgIdx + '_' + partIdx;
+  const card = document.getElementById(taskId);
+  if (card) {
+    // 恢复占位图
+    card.innerHTML = '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🔄 生成图片</span><button class="gen-action-btn gen-cancel-btn" id="' + taskId + '_cancel" onclick="cancelGenImg(\'' + taskId + '\')">✕ 取消</button></div><div class="gen-prompt-box">' + escapeHtml(desc) + '</div><div class="gen-progress-bar" style="margin-top:8px"><div class="fill" id="' + taskId + '_bar" style="width:0%"></div></div><div id="' + taskId + '_status" style="font-size:11px;color:#999;margin-top:4px">重试中 0%</div>';
+  }
+  // 重新生成
+  _genImageTasks[taskId] = { cancelled: false, msgIdx, msgId: savedMsgId };
+  
+  const bar = document.getElementById(taskId + '_bar');
+  const status = document.getElementById(taskId + '_status');
+  if (bar) { bar.style.width = '30%'; }
+  if (status) { status.textContent = '生成中 30%'; }
+  
+  fetch('/api/generate_image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description: desc })
+  }).then(r => {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(data => {
+    if (!data.filename) return;
+    if (bar) { bar.style.width = '100%'; bar.style.background = '#4caf50'; }
+    if (status) { status.textContent = '生成成功 100%'; }
+    const btnEl = document.getElementById(taskId + '_cancel');
+    if (btnEl) { btnEl.textContent = '✓'; btnEl.disabled = true; }
+    // 替换为图片
+    const resultCard = document.getElementById(taskId);
+    if (resultCard) {
+      resultCard.classList.add('gen-image-ready');
+      resultCard.innerHTML = '<div class="script-block generated-image-card"><div class="script-block-header" style="justify-content:space-between"><span style="font-size:12px;color:#999">🖼 生成图片</span><div style="display:flex;gap:4px"><button class="gen-replace-btn" onclick="replaceImage(' + msgIdx + ',' + partIdx + ',\'' + data.filename + '\',\'' + desc.replace(/'/g, "\\'") + '\')">🔄 替换</button><button class="cp-btn" onclick="copyGenImage(\'' + data.filename + '\',\'' + desc.replace(/'/g, "\\'") + '\')" title="复制图片到剪贴板">📋</button></div></div><div class="generated-image-content"><img src="/api/generated_images/' + data.filename + '" alt="' + escapeHtml(desc) + '" onclick="window.open(this.src)" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer"><div class="generated-image-desc">' + escapeHtml(desc) + '</div></div></div>';
+    }
+    // 更新消息内容
+    if (messages[msgIdx]) {
+      if (messages[msgIdx].content) {
+        const genTag = '[生成图片:' + desc + ']';
+        const aiTag = '[AI图片:' + data.filename + ':' + desc + ']';
+        messages[msgIdx].content = messages[msgIdx].content.split(genTag).join(aiTag);
+      }
+      if (messages[msgIdx]._parts && messages[msgIdx]._parts[partIdx]) {
+        messages[msgIdx]._parts[partIdx] = '[AI图片:' + data.filename + ':' + desc + ']';
+      }
+      // 保存到 localStorage 兜底映射
+      try {
+        const map = JSON.parse(localStorage.getItem('genImageMap') || '{}');
+        map[desc] = data.filename;
+        localStorage.setItem('genImageMap', JSON.stringify(map));
+      } catch(e) {}
+      if (savedMsgId) {
+        fetch('/api/messages/' + savedMsgId, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ content: messages[msgIdx].content }) }).catch(() => {});
+      }
+    }
+  }).catch(e => {
+    if (bar) { bar.style.width = '0%'; bar.style.background = '#f44336'; }
+    if (status) { status.textContent = '重试失败'; }
+  });
+}
+// ===== 生成话术 =====
+async 
+// ===== 话术模板 =====
+
+// ===== 数据统计 =====
+function showStats() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = '<div class="modal-card" style="width:480px;max-height:80vh">' +
+    '<div class="modal-header"><h3>📊 数据统计</h3></div>' +
+    '<div class="modal-body" id="statsBody" style="text-align:center;padding:40px;color:#999">加载中...</div>' +
+    '<div class="modal-footer"><button class="btn btn-outline" onclick="this.closest(\'.modal-overlay\').remove()">关闭</button></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  
+  // 加载数据
+  api('GET', '/api/stats').then(function(stats) {
+    const body = document.getElementById('statsBody');
+    if (!body) return;
+    body.style.textAlign = '';
+    body.style.padding = '';
+    body.innerHTML = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:8px 0">' +
+      '<div class="stat-card" style="background:#e3f2fd;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#1565c0">' + stats.customer_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">👥 客户总数</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#e8f5e9;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#2e7d32">' + stats.message_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">💬 消息总数</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#fff3e0;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#e65100">' + stats.today_msg_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">📝 今日消息</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#f3e5f5;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#6a1b9a">' + stats.active_customers_7d + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">🔥 7日活跃客户</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#e0f2f1;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#00695c">' + stats.doc_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">📚 知识库文档</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#fce4ec;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#c62828">' + stats.chunk_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">🧩 知识库片段</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#fff8e1;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#f57f17">' + stats.image_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">🖼️ 图片索引</div>' +
+      '</div>' +
+      '<div class="stat-card" style="background:#e8eaf6;border-radius:12px;padding:16px;text-align:center">' +
+        '<div style="font-size:28px;font-weight:700;color:#283593">' + stats.generated_image_count + '</div>' +
+        '<div style="font-size:12px;color:#666;margin-top:4px">🎨 生成图片</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="text-align:center;font-size:11px;color:#999;padding:4px 0 0">更新于 ' + stats.stats_time + '</div>';
+  }).catch(function(e) {
+    const body = document.getElementById('statsBody');
+    if (body) body.innerHTML = '<div style="color:#f44336">加载失败: ' + e.message + '</div>';
+  });
+}
+
+// 绑定统计按钮
+document.addEventListener('DOMContentLoaded', function() {
+  const btn = document.getElementById('btnStats');
+  if (btn) btn.addEventListener('click', showStats);
+});
+function showScriptTemplates() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = '<div class="modal-card" style="width:550px;max-height:80vh;display:flex;flex-direction:column">' +
+    '<div class="modal-header"><h3>📋 话术模板</h3></div>' +
+    '<div style="padding:12px 20px;display:flex;gap:8px;border-bottom:1px solid #eee">' +
+      '<input id="templateSearch" class="form-input" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px" placeholder="搜索模板...">' +
+      '<button class="btn btn-primary btn-sm" onclick="addScriptTemplate()">➕ 新建</button>' +
+    '</div>' +
+    '<div id="templateList" style="flex:1;overflow-y:auto;padding:8px 0">' +
+      '<div style="text-align:center;padding:40px;color:#999">加载中...</div>' +
+    '</div>' +
+    '<div class="modal-footer">' +
+      '<button class="btn btn-outline" onclick="this.closest(\'.modal-overlay\').remove()">关闭</button>' +
+      '<button class="btn btn-outline btn-sm" onclick="exportAllTemplatesWord()">📄 导出全部为Word</button>' +
+    '</div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+  
+  // 加载模板列表
+  loadTemplateList();
+  
+  // 搜索
+  const searchInput = document.getElementById('templateSearch');
+  searchInput.addEventListener('input', function() { loadTemplateList(this.value); });
+  searchInput.focus();
+}
+
+async function loadTemplateList(search) {
+  const el = document.getElementById('templateList');
+  if (!el) return;
+  try {
+    let url = '/api/script-templates';
+    if (search) url += '?search=' + encodeURIComponent(search);
+    const r = await api('GET', url);
+    const templates = r.templates || [];
+    if (!templates.length) {
+      el.innerHTML = '<div style="text-align:center;padding:40px;color:#999">' + (search ? '无匹配模板' : '暂无模板，点击上方"新建"创建') + '</div>';
+      return;
+    }
+    el.innerHTML = templates.map(function(t) {
+      const contentPreview = t.content.replace(/\[生成图片:[^\]]*\]/g, '[图片]').replace(/---/g, ' | ').substring(0, 80);
+      const tags = (typeof t.tags === 'string' ? JSON.parse(t.tags || '[]') : (t.tags || [])).map(function(tag) {
+        return '<span style="display:inline-block;padding:2px 8px;background:#e8f5e9;border-radius:10px;font-size:11px;color:#2e7d32;margin-right:4px">' + escapeHtml(tag) + '</span>';
+      }).join('');
+      return '<div style="padding:12px 20px;border-bottom:1px solid #f0f0f0;transition:background .15s" onmouseover="this.style.background=\'#f9f9f9\'" onmouseout="this.style.background=\'\'">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start">' +
+          '<div style="flex:1;cursor:pointer" onclick="useScriptTemplate(' + t.id + ')">' +
+            '<div style="font-weight:500;font-size:14px;margin-bottom:4px">' + escapeHtml(t.title) + '</div>' +
+            '<div style="font-size:12px;color:#999;margin-bottom:4px">' + escapeHtml(contentPreview) + (t.content.length > 80 ? '...' : '') + '</div>' +
+            '<div>' + tags + '</div>' +
+          '</div>' +
+          '<button class="btn btn-xs btn-outline" onclick="event.stopPropagation();exportScriptTemplateWord(' + t.id + ')" style="font-size:11px;flex-shrink:0;margin-left:8px" title="导出Word">📄 Word</button>' +
+        '</div>' +
+        '</div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div style="text-align:center;padding:40px;color:#f44336">加载失败: ' + e.message + '</div>';
+  }
+}
+
+async function useScriptTemplate(templateId) {
+  try {
+    const r = await api('GET', '/api/script-templates/' + templateId);
+    const template = r.template;
+    if (!template) { showToast('模板不存在'); return; }
+    
+    // 关闭弹窗
+    const overlay = document.querySelector('.modal-overlay');
+    if (overlay) overlay.remove();
+    
+    // 插入内容到输入框
+    const input = document.getElementById('msgInput');
+    input.innerHTML = escapeHtml(template.content);
+    autoResize(input);
+    showToast('✅ 已载入模板，可编辑后发送');
+  } catch(e) {
+    showToast('获取模板失败: ' + e.message);
+  }
+}
+
+async function addScriptTemplate() {
+  const title = await showPrompt('请输入模板标题：', '', '新建话术模板');
+  if (!title) return;
+  
+  // 获取当前输入框内容作为模板内容
+  const input = document.getElementById('msgInput');
+  let content = input.innerText || input.textContent || '';
+  if (!content) {
+    content = await showPrompt('请输入模板内容：', '', '模板内容');
+    if (!content) return;
+  }
+  
+  const tagsStr = await showPrompt('请输入标签（用逗号分隔）：', '', '标签');
+  const tags = tagsStr ? tagsStr.split(/[,，]/).map(function(s) { return s.trim(); }).filter(function(s) { return s; }) : [];
+  
+  try {
+    await api('POST', '/api/script-templates', { title: title, content: content, tags: tags });
+    showToast('✅ 模板已保存');
+    // 重新加载列表
+    loadTemplateList();
+  } catch(e) {
+    showToast('保存失败: ' + e.message);
+  }
+}
+
+// ===== 话术导出Word =====
+async function exportScriptTemplateWord(templateId) {
+  try {
+    // 直接用fetch下载文件
+    const resp = await fetch('/api/script-templates/' + templateId + '/export');
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({detail: '导出失败'}));
+      showToast('❌ ' + (err.detail || '导出失败'));
+      return;
+    }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    // 从Content-Disposition获取文件名
+    const disposition = resp.headers.get('Content-Disposition');
+    let filename = '话术模板.docx';
+    if (disposition) {
+      const match = disposition.match(/filename="?([^";]+)"?/);
+      if (match) filename = match[1];
+    }
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✅ Word已下载');
+  } catch(e) {
+    showToast('❌ 导出失败: ' + e.message);
+  }
+}
+
+async function exportAllTemplatesWord() {
+  try {
+    const r = await api('GET', '/api/script-templates');
+    const templates = r.templates || [];
+    if (!templates.length) {
+      showToast('没有可导出的模板');
+      return;
+    }
+    // 逐个下载（简单方案：挨个导出）
+    let count = 0;
+    for (const t of templates) {
+      await exportScriptTemplateWord(t.id);
+      count++;
+      // 稍微间隔一下
+      if (count < templates.length) await new Promise(r => setTimeout(r, 500));
+    }
+    showToast('✅ 共导出 ' + count + ' 个Word文档');
+  } catch(e) {
+    showToast('❌ 导出失败: ' + e.message);
+  }
+}
+
+function generateScript(userText) {
+  if (!selectedCustomerId) { showToast('请先选择一个客户'); return {parts: [], local_matches: []}; }
+  
+  const recent = userText || getInputText();
+  if (!recent && recentlyUploadedImageIds.length === 0) return {parts: [], local_matches: []};
+  
+  // 获取设置
+  const settingsResp = await api('GET', '/api/settings');
+  const settings = settingsResp || {};
+  
+  // 携带最近上传的图片ID
+  const imageIds = [...recentlyUploadedImageIds];
+  
+  // 生成话术
+    const tags = getTagsFromInput();
+    const genResp = await api('POST', '/api/generate', {
+      customer_id: selectedCustomerId,
+      recent_messages: recent,
+      settings: settings,
+      tags: tags,
+      current_time: (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');})(),
+      image_ids: imageIds
+    });
+  
+  // 图片预览已由 sendMessage 在发送时立即清除
+  
+  // 知识库搜索降级提示
+  if (genResp.degraded_reason) {
+    showToast('⚠️ 知识库' + genResp.degraded_reason);
+  }
+  
+  const script = genResp.script || '';
+  if (!script.trim()) { showToast('未生成话术内容'); return []; }
+  
+  // 解析为段落
+    let parts = script.split(/---/).map(p => p.trim()).filter(p => p);
+  
+    // 再展开：如果段落内嵌了 [生成图片: ...]，把它独立出来
+    const expanded = [];
+    for (const part of parts) {
+      if (/\[生成图片:\s*.*?\]/.test(part)) {
+        const segs = part.split(/(\[生成图片:\s*.*?\])/g);
+        for (const seg of segs) {
+          const t = seg.trim();
+          if (t) expanded.push(t);
+        }
+      } else {
+        expanded.push(part);
+      }
+    }
+    return {parts: expanded, local_matches: genResp.local_image_matches || [], pending_image_matches: genResp.pending_image_matches || {}};
+    }
+// ===== 模型管理 =====
+async function loadModelInfo() {
+  try {
+    const r = await api('GET', '/api/models/current');
+    currentModelLabel = (r.model && r.model.model) || '未配置';
+    document.getElementById('currentModelName').textContent = currentModelLabel;
+    
+    const mr = await api('GET', '/api/models');
+    allModels = mr.models || [];
+    defaultModelId = mr.default_id || '';
+  } catch(e) { document.getElementById('currentModelName').textContent = '加载失败'; }
+}
+function toggleModelPopup() {
+  const popup = document.getElementById('modelPopup');
+  const overlay = document.getElementById('modelPopupOverlay');
+  if (popup.classList.contains('hidden')) {
+    renderModelList();
+    popup.classList.remove('hidden');
+    overlay.classList.remove('hidden');
+  } else {
+    closeModelPopup();
+  }
+}
+function closeModelPopup() {
+  document.getElementById('modelPopup').classList.add('hidden');
+  document.getElementById('modelPopupOverlay').classList.add('hidden');
+}
+function renderModelList() {
+  const el = document.getElementById('modelList');
+  if (!allModels.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary)">暂无配置的模型</div>';
+    return;
+  }
+  el.innerHTML = allModels.map(m => `
+    <div class="popup-item">
+      <div class="model-info">
+        <div class="name">${escapeHtml(m.model)}</div>
+        <div class="provider">${escapeHtml(m.provider)} · ${escapeHtml(m.base_url.replace(/^https?:\/\//,'').slice(0,30))}</div>
+      </div>
+      ${m.is_default ? '<span class="badge">默认</span>' : ''}
+      <div style="display:flex;gap:4px;align-items:center;flex-shrink:0">
+        ${!m.is_default ? `<button class="toggle-btn" onclick="event.stopPropagation();setDefault('${m.id}')">设为默认</button>` : ''}
+        <button class="delete-btn" onclick="event.stopPropagation();removeModel('${m.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+async function setDefault(modelId) {
+  try {
+    await api('PUT', `/api/models/${modelId}/default`);
+    showToast('已设为默认模型');
+    await loadModelInfo();
+    closeModelPopup();
+  } catch(e) { showToast('设置失败: '+e.message); }
+}
+async function removeModel(modelId) {
+  if (!(await showConfirm('确定删除此模型？'))) return;
+  try {
+    await api('DELETE', `/api/models/${modelId}`);
+    showToast('已删除');
+    await loadModelInfo();
+    renderModelList();
+  } catch(e) { showToast('删除失败: '+e.message); }
+}
+function showAddModelForm() {
+  closeModelPopup();
+  document.getElementById('newApiKey').value = '';
+  document.getElementById('newBaseUrl').value = '';
+  document.getElementById('newModelId').value = '';
+  document.getElementById('newProvider').value = '';
+  document.getElementById('testResult').textContent = '';
+  showModal('addModelModal');
+}
+function closeAddModelForm() {
+  closeModal('addModelModal');
+}
+async function testNewModel() {
+  const apiKey = document.getElementById('newApiKey').value.trim();
+  const baseUrl = document.getElementById('newBaseUrl').value.trim();
+  const model = document.getElementById('newModelId').value.trim();
+  if (!apiKey || !baseUrl || !model) { document.getElementById('testResult').textContent = '❌ 请填全信息'; return; }
+  document.getElementById('testResult').textContent = '⏳ 测试中...';
+  try {
+    const r = await api('POST', '/api/models/test', { api_key: apiKey, base_url: baseUrl, model });
+    document.getElementById('testResult').textContent = r.status === 'ok' ? '✅ '+r.message : '❌ '+r.message;
+  } catch(e) { document.getElementById('testResult').textContent = '❌ 测试失败'; }
+}
+async function saveNewModel() {
+  const apiKey = document.getElementById('newApiKey').value.trim();
+  const baseUrl = document.getElementById('newBaseUrl').value.trim();
+  const model = document.getElementById('newModelId').value.trim();
+  const provider = document.getElementById('newProvider').value.trim() || 'custom';
+  if (!apiKey || !baseUrl || !model) { showToast('请填写完整信息'); return; }
+  try {
+    await api('POST', '/api/models', { provider, api_key: apiKey, model, base_url: baseUrl });
+    showToast('模型已添加');
+    await loadModelInfo();
+    closeAddModelForm();
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+
+// ===== 知识库 =====
+async function loadKnowledge() {
+  try {
+    const r = await api('GET', '/api/knowledge/documents');
+    const grid = document.getElementById('kbGrid');
+    const docs = r.documents || [];
+    if (!docs.length) {
+      grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:var(--text-secondary);padding:40px">暂无文档，点击上方上传</div>';
+      return;
+    }
+    grid.innerHTML = docs.map(d => `
+      <div class="kb-card" onclick="viewKnowledgeDoc(${d.id})">
+        <div class="kb-name">${escapeHtml(d.filename)}</div>
+        <div class="kb-meta">${escapeHtml(d.chunks || 0)} 个片段 · ${d.created_at || ''}</div>
+        <div class="kb-actions">
+          <button class="btn btn-sm btn-outline" onclick="event.stopPropagation();deleteKnowledgeDoc(${d.id})">🗑️ 删除</button>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { showToast('加载知识库失败'); }
+}
+function uploadKnowledge() { document.getElementById('kbFileInput').click(); }
+async function handleUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    await fetch('/api/knowledge/upload', { method: 'POST', body: form });
+    showToast('上传成功，正在索引...');
+    await loadKnowledge();
+  } catch(e) { showToast('上传失败: '+e.message); }
+  e.target.value = '';
+}
+async function reindexKnowledge() {
+  try {
+    await api('POST', '/api/knowledge/reindex');
+    showToast('重建索引成功');
+    await loadKnowledge();
+  } catch(e) { showToast('重建失败: '+e.message); }
+}
+async function deleteKnowledgeDoc(id) {
+  if (!(await showConfirm('确定删除此文档？'))) return;
+  try {
+    await api('DELETE', `/api/knowledge/documents/${id}`);
+    showToast('已删除');
+    await loadKnowledge();
+  } catch(e) { showToast('删除失败'); }
+}
+function viewKnowledgeDoc(id) {
+  // 简单的查看内容
+}
+
+// ===== 设置 =====
+async function loadPrompt() {
+  try {
+    const r = await api('GET', '/api/prompt');
+    document.getElementById('cfgPrompt').value = r.prompt || '';
+  } catch(e) { showToast('加载提示词失败'); }
+  // 同时加载其他提示词
+  loadAllPrompts();
+}
+async function savePrompt() {
+  const prompt = document.getElementById('cfgPrompt').value;
+  if (!prompt) { showToast('提示词不能为空'); return; }
+  try {
+    await api('PUT', '/api/prompt', { prompt });
+    showToast('提示词已保存');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+// 提示词管理 tab 切换
+function switchSettingsTab(tabId) {
+  document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.settings-tab-content').forEach(c => c.style.display = 'none');
+  document.querySelector(`.settings-tab[data-tab="${tabId}"]`).classList.add('active');
+  document.getElementById(tabId).style.display = 'block';
+}
+// 加载所有提示词（图片生成、图片识别）
+async function loadAllPrompts() {
+  try {
+    const r = await api('GET', '/api/settings/prompts');
+    const p = r.prompts || {};
+    if (document.getElementById('cfgImageGenPrompt')) {
+      document.getElementById('cfgImageGenPrompt').value = p.image_generation || '';
+    }
+    if (document.getElementById('cfgImageRecPrompt')) {
+      document.getElementById('cfgImageRecPrompt').value = p.image_recognition_chat || '';
+    }
+    if (document.getElementById('cfgImageRecIndexPrompt')) {
+      document.getElementById('cfgImageRecIndexPrompt').value = p.image_recognition_index || '';
+    }
+  } catch(e) { /* 静默 */ }
+}
+// 保存指定提示词
+async function savePromptByName(name) {
+  const map = {
+    'image_generation': 'cfgImageGenPrompt',
+    'image_recognition_chat': 'cfgImageRecPrompt',
+    'image_recognition_index': 'cfgImageRecIndexPrompt'
+  };
+  const el = document.getElementById(map[name]);
+  if (!el) { showToast('未找到输入框'); return; }
+  const content = el.value;
+  if (!content) { showToast('提示词不能为空'); return; }
+  try {
+    await api('POST', '/api/settings/prompts', { name, content });
+    showToast('✅ 提示词已保存');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+// 重建图片向量索引 - 后台运行+轮询进度
+async function reindexImageVectors() {
+  const status = document.getElementById('reindexStatus');
+  status.textContent = '⏳ 正在启动重建...';
+  try {
+    const r = await api('POST', '/api/image-index/reindex');
+    if (r.status === 'ok') {
+      status.textContent = '⏳ 向量索引正在重建（约5-15分钟），请稍候...';
+      showToast('⏳ 重建已启动，后台运行中');
+      const poll = setInterval(async () => {
+        try {
+          const pr = await api('GET', '/api/image-index/reindex/progress');
+          if (pr.data && pr.data.error) {
+            status.textContent = '❌ ' + pr.data.error;
+            clearInterval(poll);
+          } else if (pr.data && !pr.data.running) {
+            status.textContent = '✅ ' + (pr.data.message || '重建完成');
+            clearInterval(poll);
+          } else if (pr.data) {
+            status.textContent = '⏳ 重建中: ' + (pr.data.message || '请稍候...');
+          }
+        } catch(e) {}
+      }, 5000);
+    } else {
+      status.textContent = '❌ ' + (r.message || '未知错误');
+      showToast('❌ 重建失败: ' + (r.message || '未知错误'));
+    }
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    showToast('❌ 重建失败: ' + e.message);
+  }
+}
+async function loadSettings() {
+  try {
+    const r = await api('GET', '/api/settings');
+    document.getElementById('cfgBannedWords').value = r.banned_words || '';
+  } catch(e) { /* 静默 */ }
+}
+async function saveBannedWords() {
+  try {
+    const settings = await api('GET', '/api/settings');
+    settings.banned_words = document.getElementById('cfgBannedWords').value;
+    await api('PUT', '/api/settings', settings);
+    showToast('违禁词已保存');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+
+// ===== 客户编辑 =====
+function showAddCustomer() {
+  document.getElementById('customerDialogTitle').textContent = '新建客户';
+  document.getElementById('editCustomerId').value = '';
+  document.getElementById('smartParseInput').value = '';
+  document.getElementById('dlgName').value = '';
+  document.getElementById('dlgTitle').value = '';
+  document.getElementById('dlgAge').value = '';
+  document.getElementById('dlgHeight').value = '';
+  document.getElementById('dlgWeight').value = '';
+  document.getElementById('dlgTargetWeight').value = '';
+  document.getElementById('dlgPurchase').value = '';
+  document.getElementById('dlgCustomerType').value = 'cid';
+  document.getElementById('dlgRemark').value = '';
+  showModal('customerDialog');
+}
+function autoCalcCustomerType() {
+  const purchase = document.getElementById('dlgPurchase').value.trim();
+  const sel = document.getElementById('dlgCustomerType');
+  if (!purchase) {
+    sel.value = 'cid';
+    return;
+  }
+  // 计算总金额
+  const total = purchase.split('+').reduce(function(sum, p) {
+    const v = parseFloat(p.trim());
+    return sum + (isNaN(v) ? 0 : v);
+  }, 0);
+  sel.value = total >= 2970 ? 'package' : 'treatment';
+}
+function autoParse() {}
+async function parseCustomerText() {
+  const text = document.getElementById('smartParseInput').value.trim();
+  if (!text) return;
+  try {
+    const r = await api('POST', '/api/customers/parse', { text });
+    const p = r.parsed || {};
+    if (p.name) document.getElementById('dlgName').value = p.name;
+    if (p.title) document.getElementById('dlgTitle').value = p.title;
+    if (p.age) document.getElementById('dlgAge').value = p.age;
+    if (p.height) document.getElementById('dlgHeight').value = p.height;
+    if (p.weight) document.getElementById('dlgWeight').value = p.weight;
+    if (p.target_weight || p.ideal_weight) document.getElementById('dlgTargetWeight').value = p.target_weight || p.ideal_weight || '';
+  } catch(e) { showToast('识别失败'); }
+}
+async function saveCustomer() {
+  const name = document.getElementById('dlgName').value.trim();
+  if (!name) { showToast('姓名不能为空'); return; }
+  const id = document.getElementById('editCustomerId').value;
+  const data = {
+    name, title: document.getElementById('dlgTitle').value.trim(),
+    age: document.getElementById('dlgAge').value.trim(),
+    height: document.getElementById('dlgHeight').value.trim(),
+    weight: document.getElementById('dlgWeight').value.trim(),
+    target_weight: document.getElementById('dlgTargetWeight').value.trim(),
+    purchase: document.getElementById('dlgPurchase').value.trim(),
+    customer_type: document.getElementById('dlgCustomerType').value,
+    remark: document.getElementById('dlgRemark').value.trim()
+  };
+  try {
+    if (id) { await api('PUT', `/api/customers/${id}`, data); }
+    else { await api('POST', '/api/customers', data); }
+    closeModal('customerDialog');
+    await loadCustomers(document.getElementById('customerSearch').value);
+    showToast('保存成功');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+
+// ===== 工具 =====
+function autoResize(el) {
+  el.style.height = 'auto';
+  const maxH = window.innerHeight * 0.5;
+  el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+}
+
+// ===== contenteditable 工具函数 =====
+function getInputText() {
+  const el = document.getElementById('msgInput');
+  return el ? el.textContent.trim() : '';
+}
+
+function moveCursorToEnd(el) {
+  if (!el) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function getTagsFromInput() {
+  const el = document.getElementById('msgInput');
+  if (!el) return [];
+  const text = el.textContent;
+  const regex = /#([一-鿿\w]+)/g;
+  const tags = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    tags.push(match[1]);
+  }
+  return tags;
+}
+
+function insertTagAtEnd(tagName) {
+  const el = document.getElementById('msgInput');
+  if (!el) return;
+  
+  const existingTags = getTagsFromInput();
+  const hasExistingTags = existingTags.length > 0;
+  
+  const tagSpan = document.createElement('span');
+  tagSpan.className = 'input-tag';
+  tagSpan.textContent = '#' + tagName + ' ';
+  
+  if (hasExistingTags) {
+    el.appendChild(document.createTextNode(' '));
+  } else {
+    el.appendChild(document.createTextNode('\n\n'));
+  }
+  
+  el.appendChild(tagSpan);
+  moveCursorToEnd(el);
+  autoResize(el);
+}
+
+function isCursorInTag() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const range = sel.getRangeAt(0);
+  let node = range.startContainer;
+  while (node && node !== document.getElementById('msgInput')) {
+    if (node.nodeType === Node.ELEMENT_NODE && node.classList && node.classList.contains('input-tag')) {
+      return node;
+    }
+    node = node.parentNode;
+  }
+  return false;
+}
+
+// ===== 搜索客户 =====
+document.getElementById('customerSearch').addEventListener('input', function() {
+  loadCustomers(this.value);
+});
+
+// ===== 顶部按钮 =====
+document.getElementById('btnKnowledge').addEventListener('click', function() {
+  if (this.classList.contains('active')) { showPage('chat'); return; }
+  showPage('knowledge');
+  loadKnowledge();
+});
+document.getElementById('btnSettings').addEventListener('click', function() {
+  if (this.classList.contains('active')) { showPage('chat'); return; }
+  showPage('settings');
+  loadPrompt();
+  loadSettings();
+  loadTags();
+});
+document.getElementById('chatContainer').addEventListener('click', () => { showPage('chat'); });
+
+// Ctrl+Enter 发送
+document.getElementById('msgInput').addEventListener('keydown', function(e) {
+  // Ctrl+Enter 发送
+  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendMessage(); return; }
+  // 退格/Delete 删除标签时整个删除
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    const tagSpan = isCursorInTag();
+    if (tagSpan) {
+      e.preventDefault();
+      tagSpan.remove();
+      moveCursorToEnd(this);
+      autoResize(this);
+      return;
+    }
+  }
+});
+
+// 粘贴图片上传
+document.getElementById('msgInput').addEventListener('paste', async function(e) {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items || items.length === 0) return;
+  const hasImage = Array.from(items).some(item => item.type && item.type.startsWith('image/'));
+  if (hasImage) {
+    e.preventDefault();
+    await uploadImageFromClipboard(items);
+    return;
+  }
+  // 如果有纯文本，在光标位置插入
+  const plain = e.clipboardData.getData('text/plain');
+  if (plain) {
+    e.preventDefault();
+    const el = document.getElementById('msgInput');
+    el.focus();
+    document.execCommand('insertText', false, plain);
+    autoResize(el);
+  }
+});
+
+// ===== 智能[图片]描述填充 =====
+// 图片识别完成后，自动在输入框中填充描述
+function autoFillImageDescriptions() {
+  if (!recentlyUploadedImageInfos.length) return;
+  const el = document.getElementById('msgInput');
+  const tags = getTagsFromInput();
+  const text = el.textContent;
+  
+  // 找输入框中所有未填充描述的 [图片] 标记
+  const matches = [...text.matchAll(/\[图片\]/g)];
+  const unfilled = [];
+  for (const m of matches) {
+    const after = text.substring(m.index + 4);
+    if (!after.startsWith('(')) {
+      unfilled.push(m.index);
+    }
+  }
+  
+  if (unfilled.length > 0) {
+    // 有[图片]标记：按顺序填充描述
+    let newText = text;
+    let offset = 0;
+    for (let i = 0; i < unfilled.length && i < recentlyUploadedImageInfos.length; i++) {
+      const desc = recentlyUploadedImageInfos[i].description || '';
+      const insert = '(' + desc + ')';
+      const pos = unfilled[i] + 4 + offset;
+      newText = newText.substring(0, pos) + insert + newText.substring(pos);
+      offset += insert.length;
+    }
+    // 重新设置内容并恢复标签
+    el.textContent = newText;
+    // 恢复标签
+    tags.forEach(tagName => {
+      const tagSpan = document.createElement('span');
+      tagSpan.className = 'input-tag';
+      tagSpan.textContent = '#' + tagName + ' ';
+      el.appendChild(tagSpan);
+    });
+    moveCursorToEnd(el);
+    autoResize(el);
+    return;
+  }
+  
+  // 没有[图片]标记但有描述：直接追加到输入框
+  if (text) {
+    let appendText = '';
+    for (const info of recentlyUploadedImageInfos) {
+      const desc = info.description || '';
+      appendText += '[图片](' + desc + ')\n';
+    }
+    el.textContent = text + appendText;
+    // 恢复标签
+    tags.forEach(tagName => {
+      const tagSpan = document.createElement('span');
+      tagSpan.className = 'input-tag';
+      tagSpan.textContent = '#' + tagName + ' ';
+      el.appendChild(tagSpan);
+    });
+    moveCursorToEnd(el);
+    autoResize(el);
+  }
+}
+
+// 当用户输入[图片]时立即触发填充
+let _lastInputLen = 0;
+document.getElementById('msgInput').addEventListener('input', function(e) {
+  const val = e.target.textContent || '';
+  autoResize(e.target);
+  if (val.length >= _lastInputLen + 4 && val.endsWith('[图片]')) {
+    autoFillImageDescriptions();
+  } else if (val.length > _lastInputLen && val.includes('[图片]') && !val.includes('[图片](')) {
+    autoFillImageDescriptions();
+  }
+  _lastInputLen = val.length;
+});
+
+// ===== 初始化 =====
+
+// ===== API过期提醒 =====
+let _lastApiStatus = 'unknown';
+
+async function checkApiExpiry() {
+  try {
+    const r = await api('GET', '/api/check-expiry');
+    if (r.status === 'expired') {
+      if (_lastApiStatus !== 'expired') {
+        showToast('⚠️ API密钥已过期或无效，请在设置页面检查');
+      }
+      _lastApiStatus = 'expired';
+    } else if (r.status === 'unreachable' || r.status === 'timeout') {
+      if (_lastApiStatus !== 'unreachable') {
+        showToast('⚠️ API服务不可达，请检查网络');
+      }
+      _lastApiStatus = 'unreachable';
+    } else if (r.status === 'rate_limited') {
+      showToast('⏳ API请求频率受限，稍后自动恢复');
+      _lastApiStatus = 'rate_limited';
+    } else if (r.status === 'ok') {
+      _lastApiStatus = 'ok';
+    } else if (!r.configured) {
+      if (_lastApiStatus !== 'unconfigured') {
+        showToast('⚠️ 请先在设置页面配置API密钥');
+      }
+      _lastApiStatus = 'unconfigured';
+    }
+    // 保存状态到页面元素，供设置页显示
+    const el = document.getElementById('apiStatusIndicator');
+    if (el) {
+      const statusMap = {
+        'ok': '✅ 正常',
+        'expired': '❌ 已过期',
+        'unreachable': '❌ 不可达',
+        'timeout': '⚠️ 超时',
+        'rate_limited': '⏳ 频率限制',
+        'unconfigured': '⚠️ 未配置',
+        'error': '❌ 异常'
+      };
+      el.textContent = statusMap[r.status] || '未知';
+      el.className = 'api-status-' + (r.status || 'unknown');
+    }
+  } catch(e) {
+    // 静默失败，不打扰用户
+  }
+}
+
+// ===== 跟进提醒 =====
+let followUpModal = null;
+
+async function checkFollowUp() {
+  try {
+    const r = await api('GET', '/api/follow-up?days=3');
+    const badge = document.getElementById('followUpBadge');
+    if (r.count > 0) {
+      badge.textContent = r.count > 99 ? '99+' : r.count;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+    return r;
+  } catch(e) {
+    return null;
+  }
+}
+
+function showFollowUp() {
+  if (followUpModal) {
+    followUpModal.remove();
+    followUpModal = null;
+    return;
+  }
+  checkFollowUp().then(r => {
+    if (!r) {
+      showToast('获取跟进数据失败');
+      return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    let html = '<div class="modal-card" style="width:500px;max-height:70vh;display:flex;flex-direction:column">';
+    html += '<div class="modal-header"><h3>🔔 跟进提醒</h3></div>';
+    html += '<div class="modal-body" style="flex:1;overflow-y:auto;padding:0">';
+    if (r.count === 0) {
+      html += '<div style="text-align:center;padding:40px;color:#999">✅ 所有客户都已跟进，无需提醒</div>';
+    } else {
+      html += '<div style="padding:12px 20px;background:#fff8e1;font-size:13px;color:#f57f17;border-bottom:1px solid #ffe082">';
+      html += '有 <strong>' + r.count + '</strong> 个客户超过 ' + r.threshold_days + ' 天未联系</div>';
+      html += '<div style="padding:8px 0">';
+      for (const c of r.customers) {
+        const days = c.silent_days >= 0 ? c.silent_days + '天未联系' : '从未联系';
+        const name = escapeHtml(c.name) + (c.title ? ' (' + escapeHtml(c.title) + ')' : '');
+        const purchase = c.purchase ? escapeHtml(c.purchase) : '';
+        html += '<div class="follow-up-item" onclick="selectCustomer(' + c.id + ');document.querySelector(\'.modal-overlay\').remove();followUpModal=null" style="padding:12px 20px;border-bottom:1px solid #f0f0f0;cursor:pointer;display:flex;justify-content:space-between;align-items:center;transition:background .15s" onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'\'">';
+        html += '<div><div style="font-weight:500;font-size:14px">' + name + '</div>';
+        if (purchase) html += '<div style="font-size:12px;color:#999;margin-top:2px">' + purchase + '</div>';
+        html += '</div>';
+        html += '<div style="font-size:12px;color:#f44336;white-space:nowrap;margin-left:12px">⚠️ ' + days + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    html += '<div class="modal-footer"><button class="btn btn-outline" onclick="this.closest(\'.modal-overlay\').remove();followUpModal=null">关闭</button></div>';
+    html += '</div>';
+    overlay.innerHTML = html;
+    overlay.onclick = function(e) { if (e.target === overlay) { overlay.remove(); followUpModal = null; } };
+    document.body.appendChild(overlay);
+    followUpModal = overlay;
+  });
+}
+
+// 跟进提醒按钮事件
+document.addEventListener('DOMContentLoaded', function() {
+  const btn = document.getElementById('btnFollowUp');
+  if (btn) {
+    btn.addEventListener('click', showFollowUp);
+  }
+  // 每5分钟检查一次
+  checkFollowUp();
+  setInterval(checkFollowUp, 5 * 60 * 1000);
+});
+
+// 启动时检查API过期
+document.addEventListener('DOMContentLoaded', function() {
+  checkApiExpiry();
+  // 每30分钟检查一次
+  setInterval(checkApiExpiry, 30 * 60 * 1000);
+});
+async function init() {
+  showPage('chat');
+  await loadModelInfo();
+  await loadCustomers();
+  await loadTags();  // 加载标签，显示在输入框上方
+  // 检查搜索模式
+  try {
+    const sr = await api('GET', '/api/search/status');
+    if (!sr.embedding_available) {
+      showToast('⚠️ 向量搜索服务暂不可用，已降级为关键词搜索模式');
+    } else if (sr.degraded_reason) {
+      showToast('⚠️ ' + sr.degraded_reason);
+    }
+  } catch(e) { /* 静默 */ }
+}
+init();
+// ===== 标签管理 =====
+let allTags = [];
+
+async function loadTags() {
+  try {
+    const r = await api('GET', '/api/tags');
+    allTags = r.tags || [];
+    renderSettingsTags();
+    renderTagChips();
+  } catch(e) {}
+}
+
+function renderSettingsTags() {
+  const el = document.getElementById('settingsTagsList');
+  if (!el) return;
+  if (!allTags.length) {
+    el.innerHTML = '<span style="font-size:12px;color:#999">暂无标签，在下方添加</span>';
+    return;
+  }
+  el.innerHTML = allTags.map(t => `
+    <span style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:#f0f0f0;border-radius:16px;font-size:13px">
+      <span>${escapeHtml(t.name)}</span>
+      <button style="background:none;border:none;color:#e53935;cursor:pointer;font-size:14px;padding:0 2px;font-weight:700" onclick="deleteTag('${t.id}')" title="删除">✕</button>
+    </span>
+  `).join('');
+}
+
+async function addTag() {
+  const input = document.getElementById('newTagName');
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api('POST', '/api/tags', { tag: name });
+    input.value = '';
+    await loadTags();
+    showToast('标签已添加');
+  } catch(e) { showToast(e.message || '添加失败'); }
+}
+
+async function deleteTag(tagId) {
+  const ok = await showConfirm('删除此标签？', '删除标签');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/tags/${tagId}`);
+    await loadTags();
+  } catch(e) { showToast('删除失败'); }
+}
+
+async function editTag(tagId, oldName) {
+  const newName = await showPrompt('修改标签名称：', oldName);
+  if (!newName || !newName.trim()) return;
+  try {
+    await api('PUT', `/api/tags/${tagId}`, { name: newName.trim() });
+    showToast('已修改');
+    await loadTags();
+  } catch(e) { showToast('修改失败'); }
+}
+
+function renderTagChips() {
+  const el = document.getElementById('tagChips');
+  if (!el) return;
+  if (!allTags.length) {
+    el.innerHTML = '';
+    return;
+  }
+  // 如果有选中的，保持状态
+  const activeIds = new Set(
+    Array.from(el.querySelectorAll('.tag-chip.active')).map(c => c.dataset.id)
+  );
+  el.innerHTML = allTags.map(t => {
+    return `<span class="tag-chip" data-id="${t.id}" data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`;
+  }).join('');
+}
+
+
+
+// 点击标签时，插入蓝色#标签名到输入框末尾
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('tag-chip')) {
+    e.stopPropagation();
+    const tagName = e.target.textContent;
+    insertTagAtEnd(tagName);
+    document.getElementById('msgInput').focus();
+  }
+});
+
+// ===== 批量导入客户 =====
+async function showBatchImportCustomers() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+  overlay.innerHTML = '<div class="modal-card" style="width:550px;max-height:80vh;display:flex;flex-direction:column">' +
+    '<div class="modal-header"><h3>📋 批量导入客户</h3></div>' +
+    '<div style="padding:12px 20px;font-size:13px;color:#666">每行一个客户，支持格式：</div>' +
+    '<div style="padding:0 20px;font-size:12px;color:#999;line-height:1.8">' +
+      '格式1: 姓名身高.体重.年龄（如：王芳168.128.33）<br>' +
+      '格式2: 姓名年龄/身高/体重（如：王芳33/168/128）<br>' +
+      '格式3: 姓名 备注（如：王芳 已购60mg体验装）<br>' +
+    '</div>' +
+    '<div style="padding:12px 20px;flex:1;display:flex;flex-direction:column">' +
+      '<label style="font-size:13px;margin-bottom:4px;color:var(--text-secondary)">粘贴客户信息</label>' +
+      '<textarea id="batchImportText" class="form-input" style="flex:1;min-height:200px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:13px;font-family:monospace;resize:vertical" placeholder="示例：\n王芳168.128.33\n李丽170.130.28\n张华46/163/128\n赵敏 已购60mg体验装\n刘洋 疗程客户 120mg*2"></textarea>' +
+    '</div>' +
+    '<div id="batchImportResult" style="padding:0 20px;font-size:13px;display:none"></div>' +
+    '<div class="modal-footer" style="display:flex;gap:8px;justify-content:space-between">' +
+      '<div>' +
+        '<button class="btn btn-outline btn-sm" onclick="document.getElementById(\'batchImportFile\').click()">📄 从文件导入</button>' +
+        '<input id="batchImportFile" type="file" accept=".txt,.csv" style="display:none" onchange="readBatchImportFile(event)">' +
+      '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<button class="btn btn-outline" onclick="this.closest(\'.modal-overlay\').remove()">取消</button>' +
+        '<button class="btn btn-primary" onclick="submitBatchImport()">导入</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(overlay);
+  setTimeout(function() {
+    document.getElementById('batchImportText').focus();
+  }, 100);
+}
+
+function readBatchImportFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    document.getElementById('batchImportText').value = e.target.result;
+    showToast('✅ 已加载文件: ' + file.name);
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+async function submitBatchImport() {
+  const text = document.getElementById('batchImportText').value.trim();
+  if (!text) {
+    showToast('请粘贴客户信息或选择文件');
+    return;
+  }
+  const btn = document.querySelector('.modal-overlay .btn-primary');
+  if (btn) { btn.disabled = true; btn.textContent = '导入中...'; }
+  try {
+    const r = await api('POST', '/api/customers/batch', { text: text });
+    const result = document.getElementById('batchImportResult');
+    result.style.display = 'block';
+    if (r.status === 'ok') {
+      const res = r.results;
+      let html = '<div style="padding:8px 12px;border-radius:6px;background:#e8f5e9;color:#2e7d32">' +
+        '✅ 成功导入 ' + res.success + ' 个客户';
+      if (res.failed > 0) {
+        html += '，' + res.failed + ' 个失败';
+      }
+      html += '</div>';
+      if (res.errors && res.errors.length > 0) {
+        html += '<div style="margin-top:8px;max-height:100px;overflow-y:auto;font-size:12px;color:#c62828">';
+        for (const err of res.errors) {
+          html += '<div>⚠️ ' + escapeHtml(err) + '</div>';
+        }
+        html += '</div>';
+      }
+      result.innerHTML = html;
+      // 刷新客户列表
+      setTimeout(function() {
+        const overlay = document.querySelector('.modal-overlay');
+        if (overlay) overlay.remove();
+        loadCustomerList();
+        showToast('✅ 成功导入 ' + res.success + ' 个客户');
+      }, 2000);
+    } else {
+      result.innerHTML = '<div style="padding:8px 12px;border-radius:6px;background:#ffebee;color:#c62828">❌ 导入失败: ' + (r.detail || '未知错误') + '</div>';
+      if (btn) { btn.disabled = false; btn.textContent = '导入'; }
+    }
+  } catch(e) {
+    const result = document.getElementById('batchImportResult');
+    if (result) {
+      result.style.display = 'block';
+      result.innerHTML = '<div style="padding:8px 12px;border-radius:6px;background:#ffebee;color:#c62828">❌ 导入失败: ' + e.message + '</div>';
+    }
+    if (btn) { btn.disabled = false; btn.textContent = '导入'; }
+  }
+}
+
+// ===== 导入导出 =====
+async function exportAllData() {
+  try {
+    const r = await api('GET', '/api/export');
+    const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `小赛助手_数据导出_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('导出成功');
+  } catch(e) { showToast('导出失败: '+e.message); }
+}
+
+async function importAllData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!(await showConfirm('导入数据将覆盖现有数据，确定继续？'))) {
+    event.target.value = '';
+    return;
+  }
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    // 批量导入客户
+    if (data.customers) {
+      for (const c of data.customers) {
+        await api('POST', '/api/customers', {
+          name: c.name,
+          phone: c.phone,
+          height: c.height,
+          weight: c.weight,
+          age: c.age,
+          birthday: c.birthday,
+          customer_type: c.customer_type,
+          purchase_records: c.purchase_records,
+          notes: c.notes,
+          weight_goal: c.weight_goal,
+          ideal_weight: c.ideal_weight,
+          bmi: c.bmi,
+        });
+      }
+    }
+    
+    // 导入消息
+    if (data.messages) {
+      for (const m of data.messages) {
+        await api('POST', `/api/customers/${m.customer_id}/messages`, {
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+          session_id: m.session_id,
+        });
+      }
+    }
+    
+    // 导入系统提示词
+    if (data.system_prompt) {
+      await api('PUT', '/api/prompt', { prompt: data.system_prompt });
+    }
+    
+    // 导入违禁词
+    if (data.banned_words) {
+      await api('PUT', '/api/settings', { ...data.settings, banned_words: data.banned_words });
+    }
+    
+    // 导入标签
+    if (data.tags) {
+      for (const t of data.tags) {
+        try { await api('POST', '/api/tags', { tag: t.name }); } catch(e) {}
+      }
+    }
+    
+    showToast('导入成功，请刷新页面');
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) { showToast('导入失败: '+e.message); }
+  event.target.value = '';
+}
+
+
+// ===== 图片索引 =====
+
+
+async function imageIndexLoadStatus() {
+  try {
+    // 先检查是否有正在运行的任务
+    let taskActive = false;
+    try {
+      const prog = await api('GET', '/api/image-index/progress');
+      if (prog && prog.data && (prog.data.status === 'recognizing' || prog.data.status === 'starting' || prog.data.status === 'scanning')) {
+        taskActive = true;
+        const p = prog.data;
+        const total = p.total || 0;
+        const done = p.done || 0;
+        const failed = p.failed || 0;
+        const pct = total > 0 ? Math.round(done / total * 100) : 0;
+        const el = document.getElementById('imageIndexStatus');
+        let text = `🔄 ${p.task_type === 'recognize' ? '识别' : '扫描'}中 ${done}/${total} (${pct}%)`;
+        if (failed > 0) text += ` | 失败 ${failed}`;
+        if (p.current) text += ` | ${p.current.filename || ''}`;
+        el.innerHTML = text;
+        // 任务进行中，1秒后刷新
+        setTimeout(imageIndexLoadStatus, 1000);
+        return;
+      } else if (prog && prog.data && prog.data.status === 'idle' && prog.data.completed_at) {
+        // 任务刚完成，刷新状态和子分类列表
+        const r = await api('GET', '/api/image-index/status');
+        const d = r.data;
+        const el = document.getElementById('imageIndexStatus');
+        let text = `已索引 ${d.done} 张 | 待识别 ${d.pending} 张 | 失败 ${d.failed} 张`;
+        if (d.failed > 0) {
+          text += ` <button class="btn btn-outline btn-xs" onclick="retryFailedImages()" style="margin-left:8px">🔄 重新识别</button>`;
+        }
+        el.innerHTML = text;
+        imageIndexRenderGrid();
+        return;
+      }
+    } catch(e) {}
+    // 无任务进行，显示总体统计
+    const r = await api('GET', '/api/image-index/status');
+    const d = r.data;
+    const el = document.getElementById('imageIndexStatus');
+    let text = `已索引 ${d.done} 张 | 待识别 ${d.pending} 张 | 失败 ${d.failed} 张`;
+    if (d.failed > 0) {
+      text += ` <button class="btn btn-outline btn-xs" onclick="retryFailedImages()" style="margin-left:8px">🔄 重新识别</button>`;
+    }
+    el.innerHTML = text;
+  } catch(e) {
+    document.getElementById('imageIndexStatus').textContent = '获取状态失败';
+  }
+}
+
+async function retryFailedImages() {
+  try {
+    const r = await api('POST', '/api/image-index/re-recognize-failed', {});
+    if (r.status === 'ok') {
+      if (r.reset > 0) {
+        showToast(`✅ 已重置 ${r.reset} 张失败图片，开始重新识别`);
+        imageIndexLoadStatus();
+      } else {
+        showToast('✅ 暂无待识别图片');
+      }
+    } else {
+      showToast('❌ 操作失败: ' + (r.message || ''));
+    }
+  } catch(e) {
+    showToast('❌ 操作失败: ' + e.message);
+  }
+}
+
+async function imageIndexSelectFolderX() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.webkitdirectory = true;
+  input.multiple = true;
+  input.onchange = async () => {
+    const files = Array.from(input.files || []);
+    if (!files.length) return;
+    const folders = {};
+    for (const f of files) {
+      const rel = f.webkitRelativePath || f.name;
+      const top = rel.split('/')[0];
+      if (!top) continue;
+      if (!folders[top]) folders[top] = [];
+      folders[top].push(f);
+    }
+    if (!Object.keys(folders).length) { showToast('未选择有效文件夹'); return; }
+    showToast('开始处理 ' + Object.keys(folders).length + ' 个文件夹...');
+    for (const [name, fileList] of Object.entries(folders)) {
+      await api('POST', '/api/image-index/folder', { name, files: fileList.map(f => ({ name: f.name, path: f.webkitRelativePath })) });
+    }
+    showToast('处理完成');
+    await imageIndexLoadStatus();
+    await imageIndexRenderGrid();
+  };
+  input.click();
+}
+
+
+
+
+
+async function imageIndexRenderGrid() {
+  try {
+    const r = await api('GET', '/api/image-index/status');
+    const d = r.data;
+    const grid = document.getElementById('imageIndexGrid');
+    
+    if (d.done === 0) {
+      grid.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)"><div style="font-size:48px;margin-bottom:16px">📷</div><div>尚未索引任何图片</div><div style="font-size:13px;margin-top:8px">请点击"选择文件夹"开始</div></div>';
+      return;
+    }
+    
+    // 按分类展示
+    let html = '';
+    for (const cat of d.categories) {
+      html += `<div style="padding:8px 12px;background:var(--card-bg);border-radius:8px;margin-bottom:8px"><strong>📂 ${cat.category}</strong> (${cat.count}张)</div>`;
+    }
+    
+    // 分类统计
+    html += `<div style="padding:16px;background:var(--card-bg);border-radius:8px;text-align:center">
+      <div style="font-size:32px;font-weight:700;color:var(--accent)">${d.done}</div>
+      <div style="font-size:13px;color:var(--text-secondary)">已索引图片</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${d.case_groups} 个案例分组</div>
+    </div>`;
+    
+    grid.innerHTML = html;
+  } catch(e) {
+    showToast('加载失败: ' + e.message);
+  }
+}
+
+
+
+
+// 进入图片索引页面时自动加载
+const _origShowPage = window.showPage;
+window.showPage = function(page) {
+  _origShowPage(page);
+  if (page === 'imageindex') {
+      imageIndexLoadStatus();
+      imageIndexRenderGrid();
+    }
+  };
+
+  // ===== v2 图片索引新功能 =====
+
+    // ---- Subcategory list + detail (split panel) ----
+        let _selectedSubcat = '';
+
+        async function imageIndexRenderGrid() {
+          try {
+            const r = await api('GET', '/api/image-index/subcategories');
+            const subs = r || [];
+            const list = document.getElementById('subcatList');
+            if (!subs.length) {
+              list.innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary)"><div style="font-size:36px;margin-bottom:8px">📂</div><div>尚无子分类</div><div style="font-size:13px;margin-top:8px">请点击"选择文件夹"或"添加子分类"开始</div></div>';
+              document.getElementById('subcatDetail').innerHTML = '';
+              return;
+            }
+            list.innerHTML = subs.map(s => {
+              const name = s.name || '';
+              const count = s.count || 0;
+              const active = _selectedSubcat === name ? ' active' : '';
+              return '<div class="kb-list-item' + active + '" onclick="selectSubcategory(\'' + escapeHtml(name).replace(/'/g,"\\'") + '\')" style="padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border-light)">' +
+                '<div style="font-size:13px;font-weight:500">📁 ' + escapeHtml(name) + '</div>' +
+                '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + count + ' 张图片</div>' +
+                '</div>';
+            }).join('');
+            if (!_selectedSubcat && subs.length > 0) {
+              selectSubcategory(subs[0].name);
+            }
+          } catch(e) {
+            document.getElementById('subcatList').innerHTML = '<div style="padding:40px;text-align:center;color:red">加载失败: ' + e.message + '</div>';
+          }
+        }
+
+        function selectSubcategory(name) {
+          _selectedSubcat = name;
+          document.querySelectorAll('#subcatList .kb-list-item').forEach(function(el){el.classList.remove('active');});
+          const item = document.querySelector('#subcatList .kb-list-item[onclick*="' + escapeHtml(name).replace(/'/g,"\\'") + '"]');
+          if (item) item.classList.add('active');
+          const detail = document.getElementById('subcatDetail');
+          detail.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary)">加载中...</div>';
+          openSubcategoryDetail(name);
+        }
+
+
+            // ---- Subcategory detail ----
+    let _curSubcatName = '';
+    let _curSubcatPage = 1;
+    let _curSubcatTotal = 0;
+    let _editorImageId = null;
+
+    // ===== 新建子分类弹窗 =====
+    function showCreateSubcategoryDialog() {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.style.display = 'flex';
+      overlay.innerHTML = '<div class="modal-card" style="width:400px">' +
+        '<div class="modal-header"><h3>➕ 新建子分类</h3></div>' +
+        '<div class="modal-body" style="padding:20px">' +
+          '<label style="display:block;margin-bottom:6px;font-size:13px;color:var(--text-secondary)">分类名称</label>' +
+          '<input id="newSubcatName" class="form-input" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px" placeholder="输入分类名称..." autofocus>' +
+          '<label style="display:block;margin-top:12px;margin-bottom:6px;font-size:13px;color:var(--text-secondary)">描述（可选）</label>' +
+          '<textarea id="newSubcatDesc" class="form-input" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;resize:vertical;min-height:60px" placeholder="输入分类描述..."></textarea>' +
+        '</div>' +
+        '<div class="modal-footer" style="display:flex;gap:8px;justify-content:flex-end">' +
+          '<button class="btn btn-outline" onclick="this.closest(\'.modal-overlay\').remove()">取消</button>' +
+          '<button class="btn btn-primary" onclick="createSubcategory()">创建</button>' +
+        '</div>' +
+      '</div>';
+      document.body.appendChild(overlay);
+      setTimeout(function() {
+        document.getElementById('newSubcatName').focus();
+      }, 100);
+    }
+
+    async function createSubcategory() {
+      const name = document.getElementById('newSubcatName').value.trim();
+      const desc = document.getElementById('newSubcatDesc').value.trim();
+      if (!name) {
+        showToast('请输入分类名称');
+        return;
+      }
+      try {
+        // 使用已有的 create_subcategory API
+        const r = await api('POST', '/api/image-index/folder', { name: name, files: [] });
+        if (r.status === 'ok') {
+          // 如果有描述，更新描述
+          if (desc) {
+            await api('PUT', '/api/image-index/subcategories/' + encodeURIComponent(name), { description: desc });
+          }
+          showToast('✅ 子分类 "' + name + '" 已创建');
+          // 关闭弹窗
+          const overlay = document.getElementById('newSubcatName').closest('.modal-overlay');
+          if (overlay) overlay.remove();
+          imageIndexRenderGrid();
+        } else {
+          showToast('创建失败: ' + (r.detail || '未知错误'));
+        }
+      } catch(e) {
+        showToast('创建失败: ' + e.message);
+      }
+    }
+
+    async function openSubcategoryDetail(name) {
+      _curSubcatName = name;
+      document.getElementById('categoryDetailTitle').textContent = '📂 ' + name;
+      document.getElementById('categoryDetailModal').style.display = 'flex';
+      // Reset search/sort
+      document.getElementById('subcatSearchInput').value = '';
+      document.getElementById('subcatSortSelect').value = 'created_at';
+      document.getElementById('saveDescBtn').style.display = 'none';
+      // Load description
+      try {
+        const r = await api('GET', '/api/image-index/subcategories');
+        const subs = r || [];
+        const found = subs.find(function(s) { return s.name === name; });
+        if (found && found.description) {
+          document.getElementById('categoryDescInput').value = found.description;
+        } else {
+          document.getElementById('categoryDescInput').value = '';
+        }
+      } catch(e) {
+        document.getElementById('categoryDescInput').value = '';
+      }
+      loadSubcategoryImages(name, 1);
+    }
+
+    function closeSubcategoryDetail() {
+      document.getElementById('categoryDetailModal').style.display = 'none';
+    }
+
+    async function loadSubcategoryImages(name, page) {
+      if (!page) page = 1;
+      _curSubcatPage = page;
+      _curSubcatName = name;
+      const q = document.getElementById('subcatSearchInput').value.trim();
+      const sort = document.getElementById('subcatSortSelect').value;
+      const order = sort === 'use_count' ? 'desc' : 'desc';
+      const limit = 20;
+      const offset = (page - 1) * limit;
+      const listEl = document.getElementById('subcatImageList');
+      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>';
+
+      try {
+        let url = '/api/image-index/subcategories/' + encodeURIComponent(name) + '/images?sort=' + sort + '&order=' + order + '&offset=' + offset + '&limit=' + limit;
+        if (q) url += '&q=' + encodeURIComponent(q);
+        const r = await api('GET', url);
+        const data = r || {};
+        const images = data.images || [];
+        const total = data.total || 0;
+        _curSubcatTotal = total;
+
+        document.getElementById('subcatImageInfo').textContent = '共 ' + total + ' 张图片';
+        if (!images.length) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)"><div style="font-size:36px;margin-bottom:8px">🖼</div><div>该分类暂无图片</div></div>';
+          renderSubcatPagination(total, limit, page);
+          return;
+        }
+
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+        html += '<thead><tr style="background:var(--bg-secondary);border-bottom:2px solid var(--border)">';
+        html += '<th style="padding:8px 6px;text-align:center;width:32px"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:50px">缩略图</th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:50px">ID</th>';
+        html += '<th style="padding:8px 6px;text-align:left">描述</th>';
+        html += '<th style="padding:8px 6px;text-align:left;width:100px">标签</th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:50px">使用次数</th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:90px">操作</th>';
+        html += '</tr></thead><tbody>';
+
+        for (const img of images) {
+          const tags = Array.isArray(img.tags) ? img.tags.join(', ') : (img.tags || '');
+          const desc = img.description || '';
+          const useCount = img.use_count || 0;
+          html += '<tr style="border-bottom:1px solid var(--border)">';
+          html += '<td style="padding:6px;text-align:center"><input type="checkbox" class="img-checkbox" value="' + img.id + '"></td>';
+          html += '<td style="padding:6px;text-align:center"><img src="/api/image-index/images/' + img.id + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="openImagePreview(\'/api/image-index/images/' + img.id + '\')" onerror="this.outerHTML=\'<div style=\\\'width:40px;height:40px;background:var(--bg-secondary);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px\\\'>🖼</div>\'"></td>';
+          html += '<td style="padding:6px;text-align:center;font-size:11px;color:var(--text-secondary)">' + img.id + '</td>';
+          html += '<td style="padding:6px;word-break:break-word;max-width:220px">' + escapeHtml(desc.substring(0,120)) + (desc.length>120?'...':'') + '</td>';
+          html += '<td style="padding:6px;font-size:11px;color:var(--accent)">' + escapeHtml(tags.substring(0,50)) + '</td>';
+          html += '<td style="padding:6px;text-align:center;font-size:12px">' + useCount + '</td>';
+          html += '<td style="padding:6px;text-align:center;white-space:nowrap">';
+          html += '<button class="btn btn-outline btn-xs" onclick="editImage(' + img.id + ')" style="font-size:10px;padding:2px 6px">✏️</button> ';
+          html += '<button class="btn btn-danger btn-xs" onclick="deleteImage(' + img.id + ')" style="font-size:10px;padding:2px 6px">🗑</button>';
+          html += '</td></tr>';
+        }
+        html += '</tbody></table>';
+        listEl.innerHTML = html;
+        renderSubcatPagination(total, limit, page);
+      } catch(e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + e.message + '</div>';
+      }
+    }
+
+    function renderSubcatPagination(total, limit, page) {
+      const el = document.getElementById('subcatPagination');
+      const pages = Math.ceil(total / limit);
+      if (pages <= 1) { el.innerHTML = ''; return; }
+      let html = '';
+      for (let i = 1; i <= pages; i++) {
+        const cls = i === page ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+        html += '<button class="' + cls + '" onclick="loadSubcategoryImages(window._curSubcatName,' + i + ')" style="font-size:11px;padding:4px 10px">' + i + '</button>';
+      }
+      el.innerHTML = html;
+    }
+
+    // ---- Image edit ----
+    function editImage(imageId) {
+      _editorImageId = imageId;
+      const modal = document.getElementById('editorModal');
+      modal.style.display = 'flex';
+      document.getElementById('editorSaveBtn').disabled = false;
+      document.getElementById('editorSaveBtn').textContent = '💾 保存';
+      document.getElementById('editorThumb').src = '/api/image-index/images/' + imageId;
+      // Load current data
+      // We'll fetch it from the loaded list data, or do a direct API call
+      api('GET', '/api/image-index/subcategories/' + encodeURIComponent(_curSubcatName) + '/images?limit=1&q=id:' + imageId).then(function(r) {
+        const images = (r && r.images) || [];
+        const img = images.length ? images[0] : null;
+        if (img) {
+          document.getElementById('editorId').value = img.id;
+          document.getElementById('editorPath').value = img.file_path || '';
+          document.getElementById('editorDesc').value = img.description || '';
+          document.getElementById('editorTags').value = Array.isArray(img.tags) ? img.tags.join(', ') : (img.tags || '');
+          document.getElementById('editorCustomers').value = img.applicable_customers || '';
+          document.getElementById('editorCaseGroup').value = img.case_group_id || '';
+          document.getElementById('editorRemark').value = img.remark || '';
+          document.getElementById('editorUseCount').value = img.use_count || 0;
+        } else {
+          // Fallback: fill what we can
+          document.getElementById('editorId').value = imageId;
+        }
+      }).catch(function(e) {
+        document.getElementById('editorId').value = imageId;
+      });
+    }
+
+    function closeEditorModal() {
+      document.getElementById('editorModal').style.display = 'none';
+      _editorImageId = null;
+    }
+
+    async function saveImageEdit() {
+      const id = _editorImageId;
+      if (!id) { showToast('错误：未指定图片'); return; }
+      const data = {
+        description: document.getElementById('editorDesc').value.trim(),
+        tags: document.getElementById('editorTags').value.trim(),
+        applicable_customers: document.getElementById('editorCustomers').value.trim(),
+        case_group_id: document.getElementById('editorCaseGroup').value.trim(),
+        remark: document.getElementById('editorRemark').value.trim()
+      };
+      document.getElementById('editorSaveBtn').disabled = true;
+      document.getElementById('editorSaveBtn').textContent = '⏳ 保存中...';
+      try {
+        const r = await api('PUT', '/api/image-index/images/' + id, data);
+        if (r.status === 'ok') {
+          showToast('✅ 保存成功');
+          closeEditorModal();
+          loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+        } else {
+          showToast('❌ 保存失败: ' + (r.message || '未知错误'));
+          document.getElementById('editorSaveBtn').disabled = false;
+          document.getElementById('editorSaveBtn').textContent = '💾 保存';
+        }
+      } catch(e) {
+        showToast('❌ 保存失败: ' + e.message);
+        document.getElementById('editorSaveBtn').disabled = false;
+        document.getElementById('editorSaveBtn').textContent = '💾 保存';
+      }
+    }
+
+    // ---- Delete image ----
+    function deleteImage(imageId) {
+      showCustomConfirm('确定要删除这张图片吗？删除后无法恢复。', function() {
+        api('DELETE', '/api/image-index/images/' + imageId).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 已删除');
+            loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+          } else {
+            showToast('❌ 删除失败: ' + (r.message || '未知错误'));
+          }
+        }).catch(function(e) {
+          showToast('❌ 删除失败: ' + e.message);
+        });
+      });
+    }
+
+    // ---- Batch operations ----
+    function toggleSelectAll(cb) {
+      const checks = document.querySelectorAll('.img-checkbox');
+      checks.forEach(function(c) { c.checked = cb.checked; });
+    }
+
+    function getSelectedImageIds() {
+      const ids = [];
+      document.querySelectorAll('.img-checkbox:checked').forEach(function(c) {
+        ids.push(parseInt(c.value));
+      });
+      return ids;
+    }
+
+    function executeBatchAction() {
+      const action = document.getElementById('batchActionSelect').value;
+      if (!action) { showToast('请选择批量操作类型'); return; }
+      const ids = getSelectedImageIds();
+      if (!ids.length) { showToast('请先勾选要操作的图片'); return; }
+      if (action === 'delete') {
+        batchDeleteImages(ids);
+      } else if (action === 'tag') {
+        batchTagImages(ids);
+      }
+    }
+
+    function batchDeleteImages(ids) {
+      showCustomConfirm('确定要批量删除选中的 ' + ids.length + ' 张图片吗？', function() {
+        api('POST', '/api/image-index/batch-delete', { image_ids: ids }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 已批量删除');
+            loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+          } else {
+            showToast('❌ 批量删除失败');
+          }
+        }).catch(function(e) {
+          showToast('❌ 批量删除失败: ' + e.message);
+        });
+      });
+    }
+
+    function batchTagImages(ids) {
+      // Show prompt for tags
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML =
+        '<div class="modal-card" style="width:400px">' +
+          '<div class="modal-header"><h3>🏷 批量标签</h3></div>' +
+          '<div class="modal-body">' +
+            '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">为选中的 ' + ids.length + ' 张图片设置标签（逗号分隔）</div>' +
+            '<input id="batchTagInput" class="form-input" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none" placeholder="例如：排油明显, 高血脂, 女性">' +
+          '</div>' +
+          '<div class="modal-footer">' +
+            '<button class="btn btn-outline" id="batchTagCancel">取消</button>' +
+            '<button class="btn btn-primary" id="batchTagOk">确定</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.querySelector('#batchTagOk').onclick = function() {
+        const tags = overlay.querySelector('#batchTagInput').value.trim();
+        overlay.remove();
+        if (!tags) { showToast('请输入标签'); return; }
+        api('POST', '/api/image-index/batch-tag', { image_ids: ids, tags: tags }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 批量标签成功');
+            loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+          } else {
+            showToast('❌ 批量标签失败');
+          }
+        }).catch(function(e) {
+          showToast('❌ 批量标签失败: ' + e.message);
+        });
+      };
+      overlay.querySelector('#batchTagCancel').onclick = function() { overlay.remove(); };
+      overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+      setTimeout(function() { overlay.querySelector('#batchTagInput').focus(); }, 100);
+    }
+
+    // ---- Upload local images ----
+    function uploadLocalImages(category) {
+      // Create hidden file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+      input.onchange = function(e) {
+        const files = e.target.files;
+        if (!files || !files.length) return;
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+          formData.append('files[]', files[i]);
+        }
+        formData.append('category', category);
+        showToast('⏳ 正在上传 ' + files.length + ' 张图片...');
+        fetch('/api/image-index/upload', { method: 'POST', body: formData }).then(function(r) {
+          return r.json();
+        }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 上传完成，共 ' + r.images.length + ' 张');
+            loadSubcategoryImages(category, 1);
+          } else {
+            showToast('❌ 上传失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 上传失败: ' + e.message);
+        });
+        // Close the dropdown
+        document.getElementById('addImageOptions').style.display = 'none';
+      };
+      input.click();
+    }
+
+    // ---- Copy from other category ----
+    function copyFromOtherCategory(targetCategory) {
+      // First get all subcategories
+      api('GET', '/api/image-index/subcategories').then(function(r) {
+        const subs = r || [];
+        const others = subs.filter(function(s) { return s.name !== targetCategory; });
+        let optionsHtml = '<option value="">-- 选择源分类 --</option>';
+        for (const s of others) {
+          optionsHtml += '<option value="' + escapeHtml(s.name).replace(/"/g,'&quot;') + '">' + escapeHtml(s.name) + ' (' + s.count + '张)</option>';
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML =
+          '<div class="modal-card" style="width:550px;max-height:80vh">' +
+            '<div class="modal-header"><h3>📋 从其他分类复制图片</h3></div>' +
+            '<div class="modal-body">' +
+              '<div class="form-group">' +
+                '<label>源分类</label>' +
+                '<select id="copySourceSelect" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none;background:var(--input-bg)" onchange="loadCopySourceImages(this.value)">' + optionsHtml + '</select>' +
+              '</div>' +
+              '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">勾选要复制的图片（点击缩略图可预览）</div>' +
+              '<div id="copyImageList" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;min-height:60px">' +
+                '<div style="text-align:center;padding:20px;color:var(--text-secondary)">请先选择源分类</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="modal-footer">' +
+              '<button class="btn btn-outline" id="copyCancelBtn">取消</button>' +
+              '<button class="btn btn-primary" id="copyOkBtn" disabled>📋 复制选中图片</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#copyCancelBtn').onclick = function() { overlay.remove(); };
+        overlay.querySelector('#copyOkBtn').onclick = function() {
+          const selectedIds = [];
+          overlay.querySelectorAll('.copy-checkbox:checked').forEach(function(cb) {
+            selectedIds.push(parseInt(cb.value));
+          });
+          if (!selectedIds.length) { showToast('请勾选要复制的图片'); return; }
+          api('POST', '/api/image-index/copy-to-category', { image_ids: selectedIds, category: targetCategory }).then(function(r) {
+            if (r.status === 'ok') {
+              showToast('✅ 复制完成');
+              overlay.remove();
+              loadSubcategoryImages(targetCategory, 1);
+            } else {
+              showToast('❌ 复制失败: ' + (r.message || ''));
+            }
+          }).catch(function(e) {
+            showToast('❌ 复制失败: ' + e.message);
+          });
+        };
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+
+        // Save load function on window for the onchange handler
+        window.loadCopySourceImages = function(catName) {
+          if (!catName) {
+            document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">请选择源分类</div>';
+            document.getElementById('copyOkBtn').disabled = true;
+            return;
+          }
+          document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载中...</div>';
+          api('GET', '/api/image-index/subcategories/' + encodeURIComponent(catName) + '/images?limit=100').then(function(r) {
+            const images = (r && r.images) || [];
+            if (!images.length) {
+              document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">该分类暂无图片</div>';
+              document.getElementById('copyOkBtn').disabled = true;
+              return;
+            }
+            let html = '';
+            for (const img of images) {
+              const desc = img.description || '';
+              html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0">';
+              html += '<input type="checkbox" class="copy-checkbox" value="' + img.id + '">';
+              html += '<img src="/api/image-index/images/' + img.id + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="openImagePreview(\'/api/image-index/images/' + img.id + '\')" onerror="this.style.display=\'none\'">';
+              html += '<span style="flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(desc.substring(0,60)) + '</span>';
+              html += '<span style="font-size:11px;color:var(--accent)">' + (Array.isArray(img.tags) ? img.tags.slice(0,2).join(', ') : '') + '</span>';
+              html += '</div>';
+            }
+            document.getElementById('copyImageList').innerHTML = html;
+            document.getElementById('copyOkBtn').disabled = false;
+            // Monitor checkbox changes to enable/disable button
+          }).catch(function(e) {
+            document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:red">加载失败: ' + e.message + '</div>';
+          });
+        };
+      });
+    }
+
+    // ---- Update subcategory description ----
+    async function updateSubcategoryDesc() {
+      const name = _curSubcatName;
+      const desc = document.getElementById('categoryDescInput').value.trim();
+      const btn = document.getElementById('saveDescBtn');
+      btn.textContent = '⏳ 保存中...';
+      btn.disabled = true;
+      try {
+        const r = await api('PUT', '/api/image-index/subcategories/' + encodeURIComponent(name), { description: desc });
+        if (r.status === 'ok') {
+          showToast('✅ 描述已更新');
+          btn.textContent = '💾 保存';
+          btn.style.display = 'none';
+          btn.disabled = false;
+          // Refresh grid
+          imageIndexRenderGrid();
+        } else {
+          showToast('❌ 更新失败: ' + (r.message || ''));
+          btn.textContent = '💾 保存';
+          btn.disabled = false;
+        }
+      } catch(e) {
+        showToast('❌ 更新失败: ' + e.message);
+        btn.textContent = '💾 保存';
+        btn.disabled = false;
+      }
+    }
+
+    // ---- Delete subcategory ----
+    function confirmDeleteSubcategory(name) {
+      showCustomConfirm('确定要删除子分类 "' + name + '" 吗？该分类下的图片也将被删除，操作不可恢复！', function() {
+        api('DELETE', '/api/image-index/subcategories/' + encodeURIComponent(name)).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 子分类已删除');
+            if (_selectedSubcat === name) {
+              _selectedSubcat = '';
+              document.getElementById('subcatDetail').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary)">请选择一个子分类</div>';
+            }
+            imageIndexLoadStatus();
+            imageIndexRenderGrid();
+          } else {
+            showToast('❌ 删除失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 删除失败: ' + e.message);
+        });
+      });
+    }
+
+    function imageIndexClearAll() {
+      showCustomConfirm('确定要清空所有图片数据吗？\n所有图片索引、识别结果、向量将被删除，\n操作不可恢复！', function() {
+        api('POST', '/api/image-index/clear-all', {}).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 已清空所有图片数据');
+            _selectedSubcat = '';
+            document.getElementById('subcatDetail').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text-secondary)">请选择一个子分类</div>';
+            imageIndexLoadStatus();
+            imageIndexRenderGrid();
+          } else {
+            showToast('❌ 清空失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 清空失败: ' + e.message);
+        });
+      });
+    }
+
+    // ---- Edit subcategory description (from grid card) ----
+    function showEditSubcategoryDesc(name, currentDesc) {
+      showPrompt('编辑 "' + name + '" 的描述', currentDesc || '', '编辑描述').then(function(newDesc) {
+        if (newDesc === null) return; // cancelled
+        api('PUT', '/api/image-index/subcategories/' + encodeURIComponent(name), { description: newDesc }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 描述已更新');
+            imageIndexRenderGrid();
+          } else {
+            showToast('❌ 更新失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 更新失败: ' + e.message);
+        });
+      });
+    }
+
+    // ---- Add subcategory removed ----
+    function showAddSubcategoryModal() {
+      showToast('请使用「选择文件夹」自动创建分类');
+    }
+
+    // ---- Toggle add-image dropdown ----
+    function toggleAddImageOptions() {
+      const el = document.getElementById('addImageOptions');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // ---- Image preview ----
+    function openImagePreview(src) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.style.cursor = 'zoom-out';
+      overlay.innerHTML = '<div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center"><img src="' + src + '" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.3)"></div>';
+      overlay.onclick = function() { overlay.remove(); };
+      document.body.appendChild(overlay);
+    }
+
+    // ---- Custom confirm ----
+    function showCustomConfirm(msg, onConfirm) {
+      return new Promise(function(resolve) {
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        const body = escapeHtml(msg).replace(/\n/g, '<br>');
+        overlay.innerHTML =
+          '<div class="modal-card" style="width:440px;max-width:90vw">' +
+            '<div class="modal-header"><h3>⚠️ 确认操作</h3></div>' +
+            '<div class="modal-body" style="font-size:13px;line-height:1.6;white-space:pre-wrap;max-height:60vh;overflow-y:auto">' + body + '</div>' +
+            '<div class="modal-footer">' +
+              '<button class="btn btn-outline" id="customConfirmNo">取消</button>' +
+              '<button class="btn btn-primary" id="customConfirmYes">确定</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+        overlay.querySelector('#customConfirmYes').onclick = function() { overlay.remove(); resolve(true); if (onConfirm) onConfirm(); };
+        overlay.querySelector('#customConfirmNo').onclick = function() { overlay.remove(); resolve(false); };
+        overlay.onclick = function(e) { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+      });
+    }
+
+    // ---- Override searchImages for cross-category search ----
+    async function searchImages() {
+      const q = document.getElementById('imageSearchInput').value.trim();
+      if (!q) { showToast('请输入搜索关键词'); return; }
+      try {
+        const params = new URLSearchParams({ q: q, limit: 50 });
+        const r = await api('GET', '/api/image-index/search?' + params.toString());
+        const images = r.data;
+        const grid = document.getElementById('imageIndexGrid');
+        if (!images || images.length === 0) {
+          grid.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)"><div style="font-size:48px;margin-bottom:16px">🔍</div><div>未找到匹配的图片</div><div style="font-size:13px;margin-top:8px">试试其他关键词</div></div>';
+          return;
+        }
+        let html = '<div style="display:flex;gap:8px;padding:8px 0;font-size:13px;color:var(--text-secondary)"><span>搜索 "' + q + '" 共 ' + images.length + ' 张</span><button class="btn btn-outline btn-xs" onclick="imageIndexRenderGrid()">清除搜索</button></div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
+        for (const img of images) {
+          const tags = Array.isArray(img.tags) ? img.tags.join(', ') : img.tags || '';
+          const desc = (img.description || '').substring(0, 150);
+          html += '<div style="padding:12px;background:var(--card-bg);border-radius:8px;border:1px solid var(--border)">';
+          html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">[' + (img.category||'') + ']</div>';
+          html += '<div style="font-size:13px;line-height:1.5;margin-bottom:6px">' + escapeHtml(desc) + (desc.length>=150?'...':'') + '</div>';
+          html += '<div style="font-size:11px;color:var(--accent)">' + escapeHtml(tags) + '</div>';
+          if (img.applicable_customers) {
+            html += '<div style="font-size:11px;color:#888;margin-top:4px;border-top:1px solid var(--border);padding-top:4px">' + escapeHtml(img.applicable_customers.substring(0, 120)) + '</div>';
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+        grid.innerHTML = html;
+      } catch(e) {
+        showToast('搜索失败: ' + e.message);
+      }
+    }
+
+
+
+    // ---- Keep reRecognizeImage for backward compatibility ----
+    async function reRecognizeImage(imageId) {
+      try {
+        const r = await api('POST', '/api/image-index/re-recognize/' + imageId, {});
+        if (r.status === 'ok') {
+          showToast('✅ 重新识别成功');
+          if (_curSubcatName) loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+        } else {
+          showToast('❌ 识别失败: ' + (r.message || '未知错误'));
+        }
+      } catch(e) {
+        showToast('❌ 识别失败: ' + e.message);
+      }
+    }
+
+    // ---- Close any stray confirm dropdown ----
+    document.addEventListener('click', function(e) {
+      const opts = document.getElementById('addImageOptions');
+      if (opts && opts.style.display !== 'none' && !e.target.closest('#addImageBtn') && !e.target.closest('#addImageOptions')) {
+        opts.style.display = 'none';
+      }
+    });
+
+    

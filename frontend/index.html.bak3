@@ -1,0 +1,3938 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<script src="https://unpkg.com/lucide@latest"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>小赛助手 </title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#f0f0f0;--bg-surface:#fff;--text:#1d1d1f;--text-secondary:#86868b;--border:#d2d2d7;--border-light:#e5e5ea;--primary:#0071e3;--primary-hover:#0077ed;--primary-bg:rgba(0,113,227,.08);--danger:#ff3b30;--radius:6px;--radius-lg:10px;--sidebar-w:260px;--header-h:48px;--footer-h:32px}
+html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue','Noto Sans SC',sans-serif;background:var(--bg);color:var(--text);font-size:14px;overflow:hidden}
+.lucide{width:16px;height:16px;display:inline-block;vertical-align:middle}
+.app{display:flex;flex-direction:column;height:100vh}
+.header{height:var(--header-h);background:var(--bg-surface);border-bottom:1px solid var(--border-light);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.header-left{display:flex;align-items:center;gap:10px;font-weight:600;font-size:13px}
+.header-left small{font-weight:400;font-size:10px;color:var(--text-secondary)}
+.header-right{display:flex;align-items:center;gap:4px;margin-left:auto}
+.body{flex:1;display:flex;overflow:hidden}
+.sidebar{width:var(--sidebar-w);background:var(--bg-surface);border-right:1px solid var(--border-light);display:flex;flex-direction:column;flex-shrink:0}
+.sidebar.hidden-side{width:0;overflow:hidden;margin-left:calc(var(--sidebar-w)*-1);border-right:none}
+.sidebar-search{padding:10px 10px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:8px}
+.sidebar-search input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none;background:var(--bg);transition:border .2s}
+.sidebar-search input:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+.sidebar-list{flex:1;overflow-y:auto}
+.sidebar-item{padding:7px 12px;border-bottom:1px solid var(--border-light);cursor:pointer}
+.sidebar-item:hover{background:var(--bg)}
+.sidebar-item.active{background:var(--primary-bg)}
+.sidebar-item .top-row{display:flex;align-items:center;justify-content:space-between;gap:4px}
+.sidebar-item .name{font-size:13px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sidebar-item .customer-actions{display:flex;gap:4px;opacity:0}
+.sidebar-item:hover .customer-actions{opacity:1}
+.sidebar-item .customer-actions button{border:none;background:transparent;cursor:pointer;padding:2px;color:var(--text-secondary);font-size:12px}
+.sidebar-item .customer-actions button:hover{color:var(--primary)}
+.sidebar-item .preview{font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.category-group{border-bottom:1px solid var(--border-light)}
+.category-header{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:500;user-select:none}
+.category-header:hover{background:var(--bg)}
+.category-header .arrow{font-size:9px;color:var(--text-secondary);width:14px}
+.category-body{max-height:0;overflow:hidden}
+.category-body.expanded{max-height:2000px}
+.category-body .sidebar-item{padding-left:20px}
+.main-area{flex:1;display:flex;flex-direction:column;min-height:0}
+.chat-wrapper{flex:1;display:flex;flex-direction:column;min-height:0}
+.chat-container{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px}
+.chat-empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--text-secondary);font-size:14px;flex-direction:column;gap:8px}
+.chat-msg{max-width:75%;padding:8px 14px;border-radius:10px;line-height:1.5;word-break:break-word;font-size:14px}
+.chat-msg.ai{align-self:flex-start;border-bottom-left-radius:4px;background:var(--bg-surface);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.chat-msg.user{align-self:flex-end}
+.chat-msg .time{font-size:10px;color:var(--text-secondary);margin-top:4px}
+.chat-msg.user .time{text-align:right}
+.chat-msg .msg-content{white-space:pre-wrap}
+.chat-msg .msg-actions{display:flex;gap:4px;margin-top:4px;opacity:0}
+.chat-msg:hover .msg-actions{opacity:1}
+.chat-msg .msg-actions button{border:none;background:transparent;cursor:pointer;font-size:11px;padding:2px 8px;border-radius:4px;color:var(--text-secondary)}
+.chat-msg .msg-actions button:hover{background:var(--bg)}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 12px;background:#e5e5ea;border-radius:4px;font-size:12px;cursor:pointer}
+.tag-chip:hover{background:#d2d2d7}
+.tag-chip.active{background:var(--primary);color:#fff}
+.chat-input-area{background:var(--bg-surface);border-top:1px solid var(--border-light);padding:8px 12px;display:flex;gap:6px;align-items:flex-end}
+.chat-input-editable{flex:1;min-height:36px;max-height:40vh;overflow-y:auto;padding:8px 14px;font-size:14px;line-height:1.4;font-family:inherit;outline:none;border:1px solid var(--border);border-radius:18px;background:var(--bg);white-space:pre-wrap;word-break:break-word}
+.chat-input-editable:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+.chat-input-editable:empty::before{content:attr(data-placeholder);color:var(--text-secondary)}
+.chat-input-area .send-btn{width:32px;height:32px;border-radius:50%;border:1px solid var(--primary);background:var(--primary);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;transition:all .15s}
+.chat-input-area .send-btn:hover{opacity:.9}
+.chat-input-area .send-btn:disabled{background:#c7c7cc;border-color:#c7c7cc;cursor:not-allowed}
+.chat-input-area .send-btn img{width:16px;height:16px;display:block}
+.chat-input-area .img-btn{width:32px;height:32px;border-radius:50%;border:1px solid var(--border);background:transparent;color:var(--text-secondary);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;transition:all .15s}
+.chat-input-area .img-btn:hover{border-color:var(--primary)}
+.chat-input-area .img-btn img{width:16px;height:16px;display:block}
+.thinking-dots{display:flex;align-items:center;gap:4px;padding:8px 0 4px}
+.think-dot{width:6px;height:6px;border-radius:50%;background:#aeaeb2;animation:thinkBounce 1.4s infinite ease-in-out both}
+.think-dot:nth-child(1){animation-delay:0s}
+.think-dot:nth-child(2){animation-delay:.16s}
+.think-dot:nth-child(3){animation-delay:.32s}
+.thinking-dots .hint{margin-left:6px;font-size:12px;color:var(--text-secondary)}
+@keyframes thinkBounce{0%,80%,100%{transform:scale(0)}40%{transform:scale(1)}}
+.script-block{border:1px solid var(--border-light);border-radius:6px;margin-bottom:8px;overflow:hidden}
+.script-block:last-child{margin-bottom:0}
+.script-block-header{display:flex;justify-content:flex-end;padding:2px 8px;background:var(--bg);border-bottom:1px solid var(--border-light)}
+.script-block-header .cp-btn{background:transparent;border:none;cursor:pointer;color:var(--text-secondary);padding:2px 6px;border-radius:4px;font-size:12px}
+.script-block-header .cp-btn:hover{background:#e5e5ea}
+.script-block-content{padding:8px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap}
+.btn{display:inline-flex;align-items:center;gap:4px;padding:5px 14px;border:none;border-radius:6px;cursor:pointer;font-size:12px;user-select:none}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-primary:hover{background:var(--primary-hover)}
+.btn-outline{background:transparent;border:1px solid var(--border);color:var(--text);padding:4px 13px}
+.btn-outline:hover{background:var(--bg)}
+.btn-sm{padding:3px 10px;font-size:11px}
+.btn-xs{padding:2px 8px;font-size:11px}
+.btn-icon{width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border-light);cursor:pointer;color:var(--text-secondary);padding:0;transition:all .15s;flex-shrink:0}
+.btn-icon:hover{background:var(--bg);border-color:var(--primary);color:var(--primary)}
+.btn-icon.active{background:var(--primary);color:#fff}
+.btn-icon .lucide{width:15px;height:15px;display:block;flex-shrink:0}
+.btn i{margin-right:6px}
+.modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:1000;display:flex;align-items:center;justify-content:center}
+.modal-card{background:var(--bg-surface);border-radius:12px;width:520px;max-width:90vw;max-height:85vh;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.15);display:flex;flex-direction:column}
+.modal-header{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border-light)}
+.modal-header h3{font-size:14px;font-weight:600}
+.modal-body{padding:18px;overflow-y:auto;flex:1}
+.modal-footer{display:flex;gap:8px;justify-content:flex-end;padding:14px 20px;flex-shrink:0}
+.modal-close-btn{width:28px;height:28px;border:none;background:transparent;cursor:pointer;border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--text-secondary)}
+.modal-close-btn:hover{background:var(--bg)}
+.form-group{margin-bottom:12px}
+.form-group label{display:block;font-weight:500;margin-bottom:4px;font-size:12px}
+.form-group input,.form-group textarea,.form-group select{width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;font-family:inherit;background:var(--bg)}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+.popup-overlay{position:fixed;top:0;left:0;right:0;bottom:0;z-index:999;background:transparent}
+.popup-card{position:fixed;bottom:calc(var(--footer-h) + 8px);right:12px;background:var(--bg-surface);border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);width:300px;max-height:40vh;overflow-y:auto;z-index:1000}
+.popup-card .popup-item{padding:6px 12px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border-light)}
+.popup-card .popup-item:hover{background:var(--bg)}
+#pageSettings{margin:0;padding:0;width:100%;align-self:stretch;display:flex;flex-direction:column}
+.settings-header{height:48px;display:flex;align-items:center;padding:0 14px;flex-shrink:0;border-bottom:1px solid var(--border-light);background:var(--bg-surface);position:relative}
+.settings-header .settings-back-btn{background:none;border:none;cursor:pointer;font-size:13px;color:var(--primary);display:flex;align-items:center;gap:4px;padding:0;position:absolute;left:230px;top:50%;transform:translateY(-50%)}
+.settings-header .settings-back-btn:hover{opacity:.8}
+.settings-page{display:flex;flex:1;overflow:hidden;margin:0;padding:0;width:100%}
+.settings-sidebar{width:200px;background:var(--bg-surface);border-right:1px solid var(--border-light);padding:4px 0;flex-shrink:0;overflow-y:auto}
+.settings-nav-item{padding:8px 12px;font-size:13px;cursor:pointer;color:var(--text);transition:all .1s;border-left:2px solid transparent}
+.settings-nav-item:hover{background:var(--bg)}
+.settings-nav-item.active{background:var(--primary-bg);color:var(--primary);font-weight:500;border-left-color:var(--primary)}
+.settings-content{flex:1;overflow-y:auto;padding:28px 32px}
+.settings-content-inner{max-width:600px;margin:0 auto}
+.settings-back-btn{margin-bottom:12px}
+.settings-back-btn button{font-size:12px;color:var(--primary);background:none;border:none;cursor:pointer;padding:4px 8px;border-radius:6px}
+.settings-back-btn button:hover{background:var(--primary-bg)}
+.settings-card{background:var(--bg-surface);border:1px solid var(--border-light);border-radius:10px;padding:24px;margin-bottom:0}
+.settings-card h3{font-size:16px;font-weight:600;margin-bottom:4px}
+.settings-card .subtitle{font-size:12px;color:var(--text-secondary);margin-bottom:16px;line-height:1.4}
+.settings-card textarea{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;font-family:inherit;line-height:1.5;resize:vertical;background:var(--bg)}
+.settings-card textarea:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+.settings-card textarea[readonly]{background:var(--bg);color:var(--text-secondary);cursor:not-allowed}
+.settings-card .actions{display:flex;gap:6px;margin-top:12px}
+.model-group{background:var(--bg);border-radius:8px;padding:14px 16px;margin-bottom:8px;border:1px solid var(--border-light)}
+.model-group-label{font-size:13px;font-weight:600;margin-bottom:8px}
+.model-group select{width:100%;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none;background:var(--bg-surface)}
+.model-group select:focus{border-color:var(--primary)}
+.model-group .model-info{font-size:11px;color:var(--text-secondary);margin-top:6px;padding:6px 10px;background:var(--bg-surface);border-radius:6px}
+.kb-toolbar{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--bg-surface);flex-wrap:wrap}
+.kb-grid{display:grid;gap:8px;padding:12px;overflow-y:auto;flex:1;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.kb-card{background:var(--bg-surface);border-radius:8px;padding:12px;border:1px solid var(--border-light);cursor:pointer}
+.kb-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.06)}
+.kb-card .kb-name{font-weight:500;font-size:12px;margin-bottom:4px}
+.kb-card .kb-meta{font-size:11px;color:var(--text-secondary)}
+.gen-progress-card{border:1px solid var(--border-light);border-radius:8px;padding:10px;margin:6px 0}
+.gen-progress-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:6px}
+.gen-progress-bar{height:4px;background:#e5e5ea;border-radius:2px;overflow:hidden}
+.gen-progress-bar .fill{height:100%;background:var(--primary);border-radius:2px}
+.gen-cancel-btn{font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:6px;background:transparent;cursor:pointer;color:var(--text-secondary)}
+.gen-cancel-btn:hover{border-color:var(--danger);color:var(--danger)}
+.gen-prompt-box{font-size:11px;color:var(--text-secondary);background:var(--bg);border-radius:6px;padding:6px 8px;margin-top:4px;word-break:break-word}
+.hidden{display:none!important}
+.toast{position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.85);color:#fff;padding:8px 20px;border-radius:8px;font-size:12px;z-index:9999;pointer-events:none}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- 顶栏 -->
+    <div class="header">
+      <div class="header-left" onclick="showPage('chat')" style="cursor:pointer">
+            小赛助手 
+          </div>
+      <div class="header-right">
+              <button class="btn-icon" id="btnFollowUp" title="跟进提醒" style="position:relative"><i data-lucide="bell"></i><span id="followUpBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ff3b30;color:#fff;font-size:9px;min-width:14px;height:14px;border-radius:7px;line-height:14px;text-align:center;padding:0 3px;font-weight:700"></span></button>
+                      <button class="btn-icon" id="btnKnowledge" title="知识库"><i data-lucide="book"></i></button>
+                              <button class="btn-icon" id="btnSettings" title="设置"><i data-lucide="settings"></i></button>
+            </div>
+    </div>
+
+  <!-- 主体 -->
+  <div class="body" id="appBody">
+    <!-- 侧边栏：客户列表 -->
+    <div class="sidebar" id="pageCustomers">
+      <div class="sidebar-search">
+              <input type="text" id="customerSearch" placeholder="搜索客户...">
+              <button class="btn btn-primary btn-sm" onclick="showAddCustomer()" title="新建客户" style="border-radius:6px;padding:6px 10px;white-space:nowrap;display:flex;align-items:center;gap:4px"><i data-lucide="plus" style="width:14px;height:14px"></i> 新建</button>
+            </div>
+      <div class="sidebar-list" id="customerList"></div>
+    </div>
+
+    <!-- 主区域 -->
+    <div class="main-area" id="pageMain">
+      <!-- 聊天区域（含输入框，只在此页面显示） -->
+      <div class="chat-wrapper" id="chatArea">
+              <div id="customerProfileInfo" style="min-height:0;transition:min-height .2s"></div>
+              <div class="chat-container" id="chatContainer">
+                <div class="chat-empty" id="chatEmpty">
+                  <div class="icon">💬</div>
+                  <div>请选择一个客户开始沟通</div>
+                </div>
+              </div>
+              <!-- 图片预览区域（输入框上方） -->
+                            <div id="imagePreviewArea"></div>
+                            <!-- 标签区域（输入框上方） -->
+                            <div id="tagChips" style="padding:4px 16px 0;flex-wrap:wrap;gap:6px;max-height:60px;overflow-y:auto"></div>
+                            <!-- 输入区域 -->
+                      <div class="chat-input-area">
+                        <div id="msgInput" contenteditable="true" class="chat-input-editable" data-placeholder="输入你想说的话...（支持粘贴聊天记录）"></div>
+                        <input type="file" id="customerImageInput" accept="image/*" style="display:none" onchange="uploadCustomerImage(event)" multiple>
+                        <button class="img-btn" id="btnImgUpload" onclick="document.getElementById('customerImageInput').click()" title="上传图片"><i data-lucide="image"></i></button>
+                                                <button class="send-btn" id="btnSend" onclick="sendMessage()" title="发送并生成话术"><i data-lucide="send"></i></button>
+                      </div>
+      </div>
+
+      <!-- 知识库页面（隐藏） -->
+      <div class="hidden" id="pageKnowledge" style="flex:1;display:none;flex-direction:column">
+              <div class="kb-toolbar">
+                <button class="btn btn-primary btn-sm" onclick="uploadKnowledge()">📄 上传文档</button>
+                <button class="btn btn-outline btn-sm" onclick="reindexKnowledge()">🔄 重建索引</button>
+                <input type="file" id="kbFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" onchange="handleUpload(event)">
+                <button class="btn btn-outline btn-sm" onclick="showPage('imageindex')" style="margin-left:auto">📷 图片索引</button>
+              </div>
+              <div style="display:flex;flex:1;overflow:hidden">
+                <div id="kbList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div>
+                <div id="kbDetail" style="flex:1;overflow-y:auto;padding:20px 24px">
+                  <div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个文档查看详情</div>
+                </div>
+              </div>
+            </div>
+
+      <!-- 图片索引卡片 -->
+      <div class="hidden" id="pageImageIndex" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
+        <div class="kb-toolbar">
+                  <button class="btn btn-outline btn-sm" onclick="showPage('knowledge')" style="margin-right:4px">← 返回</button>
+                                    <button class="btn btn-primary btn-sm" onclick="imageIndexSelectFolder()">📁 选择文件夹</button>
+                                    <button class="btn btn-outline btn-sm" onclick="reindexImageVectors()">🔄 重建向量索引</button>
+                                    <span id="reindexStatus" style="margin-left:auto;font-size:12px;color:var(--text-secondary)"></span>
+
+
+                  <span id="imageIndexStatus" style="margin-left:auto;font-size:12px;color:var(--text-secondary)">加载中...</span>
+                </div>
+        
+                <!-- 搜索栏 -->
+                <div style="display:flex;gap:8px;padding:8px 12px;align-items:center">
+                  <input id="imageSearchInput" type="text" placeholder="🔍 搜索图片关键词（如：三高、付款、女性、瘦20斤...）" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text);outline:none" onkeydown="if(event.key==='Enter')searchImages()">
+                  <button class="btn btn-outline btn-sm" onclick="searchImages()">搜索</button>
+                </div>
+
+                <div class="kb-grid" id="imageIndexGrid"></div>
+
+                <!-- ===== 子分类详情弹窗 ===== -->
+                <div id="categoryDetailModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this)closeSubcategoryDetail()">
+                  <div class="modal-card" style="width:90%;max-width:1000px;max-height:90vh">
+                    <div class="modal-header">
+                      <span id="categoryDetailTitle" style="font-size:16px;font-weight:600">📂 子分类</span>
+                      <button class="modal-close-btn" onclick="closeSubcategoryDetail()">✕</button>
+                    </div>
+                    <div class="modal-body" id="categoryDetailBody" style="padding:16px 20px;overflow-y:auto;flex:1">
+
+                      <!-- a) 分类描述区 -->
+                      <div style="margin-bottom:14px;padding:12px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border)">
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                          <span style="font-weight:600;font-size:13px">📝 分类描述</span>
+                          <button class="btn btn-outline btn-sm" id="saveDescBtn" onclick="updateSubcategoryDesc()" style="display:none;font-size:11px">💾 保存</button>
+                        </div>
+                        <textarea id="categoryDescInput" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;min-height:40px;background:var(--input-bg);color:var(--text);outline:none" placeholder="暂无描述，在此输入分类描述..." oninput="document.getElementById('saveDescBtn').style.display='inline-flex'"></textarea>
+                      </div>
+
+                      <!-- b) 搜索 + 排序 + 批量操作 -->
+                      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+                        <input id="subcatSearchInput" type="text" placeholder="🔍 搜索图片..." style="flex:1;min-width:120px;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:13px;outline:none" onkeydown="if(event.key==='Enter')loadSubcategoryImages(window._curSubcatName,1)">
+                        <select id="subcatSortSelect" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:13px;outline:none" onchange="loadSubcategoryImages(window._curSubcatName,1)">
+                          <option value="created_at">按添加时间</option>
+                          <option value="use_count">按使用次数</option>
+                        </select>
+                        <select id="batchActionSelect" style="padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:13px;outline:none">
+                          <option value="">批量操作...</option>
+                          <option value="delete">🗑 批量删除</option>
+                          <option value="tag">🏷 批量标签</option>
+                        </select>
+                        <button class="btn btn-primary btn-sm" onclick="executeBatchAction()">执行</button>
+                      </div>
+
+                      <!-- 图片表格头部信息 -->
+                      <div id="subcatImageInfo" style="font-size:12px;color:var(--text-secondary);margin-bottom:8px"></div>
+
+                      <!-- c) 图片表格 -->
+                      <div id="subcatImageList" style="min-height:100px"></div>
+
+                      <!-- 分页 -->
+                      <div id="subcatPagination" style="display:flex;justify-content:center;gap:6px;margin-top:12px;flex-wrap:wrap"></div>
+
+                    </div>
+                    <!-- 底部按钮 -->
+                    <div class="modal-footer">
+                      <div style="position:relative;display:inline-block">
+                        <button class="btn btn-outline btn-sm" id="addImageBtn" onclick="toggleAddImageOptions()">➕ 添加图片</button>
+                        <div id="addImageOptions" style="display:none;position:absolute;bottom:100%;left:0;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.12);padding:6px;z-index:10;min-width:180px">
+                          <div style="padding:8px 12px;cursor:pointer;border-radius:6px;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''" onclick="uploadLocalImages(window._curSubcatName)">📤 从本地上传</div>
+                          <div style="padding:8px 12px;cursor:pointer;border-radius:6px;font-size:13px" onmouseover="this.style.background='var(--bg-secondary)'" onmouseout="this.style.background=''" onclick="copyFromOtherCategory(window._curSubcatName)">📋 从其他分类复制</div>
+                        </div>
+                      </div>
+                      <button class="btn btn-outline btn-sm" onclick="closeSubcategoryDetail()">✕ 关闭</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- ===== 图片编辑弹窗 ===== -->
+                <div id="editorModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1100;align-items:center;justify-content:center" onclick="if(event.target===this)closeEditorModal()">
+                  <div class="modal-card" style="width:520px;max-height:90vh">
+                    <div class="modal-header">
+                      <span style="font-size:16px;font-weight:600">✏️ 编辑图片</span>
+                      <button class="modal-close-btn" onclick="closeEditorModal()">✕</button>
+                    </div>
+                    <div class="modal-body" style="padding:16px 20px;overflow-y:auto;flex:1">
+                      <!-- 缩略图 -->
+                      <div id="editorThumbArea" style="text-align:center;margin-bottom:14px">
+                        <img id="editorThumb" src="" style="max-width:100%;max-height:180px;border-radius:8px;border:1px solid var(--border);cursor:pointer" onclick="openImagePreview(this.src)">
+                      </div>
+                      <!-- 表单 -->
+                      <div class="form-group">
+                        <label>ID</label>
+                        <input id="editorId" type="text" readonly style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px">
+                      </div>
+                      <div class="form-group">
+                        <label>文件路径</label>
+                        <input id="editorPath" type="text" readonly style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px">
+                      </div>
+                      <div class="form-group">
+                        <label>描述</label>
+                        <textarea id="editorDesc" rows="3" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;outline:none;background:var(--input-bg);color:var(--text)"></textarea>
+                      </div>
+                      <div class="form-group">
+                        <label>标签（逗号分隔）</label>
+                        <input id="editorTags" type="text" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;background:var(--input-bg);color:var(--text)">
+                      </div>
+                      <div class="form-group">
+                        <label>适用客户</label>
+                        <textarea id="editorCustomers" rows="2" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;outline:none;background:var(--input-bg);color:var(--text)"></textarea>
+                      </div>
+                      <div class="form-group">
+                        <label>案例组ID</label>
+                        <input id="editorCaseGroup" type="text" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;outline:none;background:var(--input-bg);color:var(--text)" placeholder="数字序号">
+                      </div>
+                      <div class="form-group">
+                        <label>备注</label>
+                        <textarea id="editorRemark" rows="2" style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;outline:none;background:var(--input-bg);color:var(--text)"></textarea>
+                      </div>
+                      <div class="form-group">
+                        <label>使用次数（只读）</label>
+                        <input id="editorUseCount" type="text" readonly style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-secondary);color:var(--text-secondary);font-size:13px">
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button class="btn btn-outline" onclick="closeEditorModal()">取消</button>
+                      <button class="btn btn-primary" id="editorSaveBtn" onclick="saveImageEdit()">💾 保存</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+                            <!-- 设置页面（隐藏） -->
+      <div class="hidden" id="pageSettings" style="display:none;flex:1">
+              <div class="settings-header">
+                        <button class="settings-back-btn" onclick="showPage('chat')"><i data-lucide="arrow-left" style="width:16px;height:16px"></i> 返回</button>
+                      </div>
+              <div class="settings-page">
+                <div class="settings-sidebar" id="settingsSidebar">
+            <div class="settings-nav-item active" data-tab="tabSystemPrompt" onclick="switchSettingsTab('tabSystemPrompt')"><i data-lucide="message-square"></i> 话术提示词</div>
+            <div class="settings-nav-item" data-tab="tabImageRec" onclick="switchSettingsTab('tabImageRec')"><i data-lucide="eye"></i> 图片识别</div>
+            <div class="settings-nav-item" data-tab="tabImageRecIndex" onclick="switchSettingsTab('tabImageRecIndex')"><i data-lucide="tag"></i> 索引识别</div>
+            <div class="settings-nav-item" data-tab="tabModelConfig" onclick="switchSettingsTab('tabModelConfig');setTimeout(loadModelConfigTab,0)"><i data-lucide="sliders"></i> 模型</div>
+            <div class="settings-nav-item" data-tab="tabBannedWords" onclick="switchSettingsTab('tabBannedWords');loadBannedWords()"><i data-lucide="ban"></i> 违禁词</div>
+            <div class="settings-nav-item" data-tab="tabData" onclick="switchSettingsTab('tabData')"><i data-lucide="database"></i> 数据管理</div>
+          </div>
+          <div class="settings-content" style="padding:20px 32px">
+                      <div class="settings-content-inner">
+              <div id="tabSystemPrompt" class="settings-tab-content">
+                <div class="settings-card">
+                  <h3>话术提示词</h3>
+                  <div class="subtitle">告诉AI怎么说话、怎么推单、怎么处理各种客户情况。</div>
+                  <textarea id="cfgPrompt" rows="20"></textarea>
+                  <div class="actions" style="justify-content:flex-end">
+                    <button class="btn btn-outline btn-sm" onclick="loadPrompt()"><i data-lucide="undo"></i> 恢复默认</button>
+                    <button class="btn btn-primary" onclick="savePrompt()"><i data-lucide="check"></i> 保存</button>
+                  </div>
+                </div>
+              </div>
+              <div id="tabImageRec" class="settings-tab-content" style="display:none">
+                              <div class="settings-card">
+                                <h3>图片识别</h3>
+                                <div class="subtitle">AI识别客户上传的图片时使用的提示词。</div>
+                                <textarea id="cfgImageRecPrompt" rows="12"></textarea>
+                                <div class="actions" style="justify-content:flex-end">
+                                  <button class="btn btn-outline btn-sm" onclick="loadAllPrompts()"><i data-lucide="refresh-cw"></i> 刷新</button>
+                                  <button class="btn btn-primary" onclick="savePromptByName('image_recognition_chat')"><i data-lucide="check"></i> 保存</button>
+                                </div>
+                              </div>
+                            </div>
+                            <div id="tabImageRecIndex" class="settings-tab-content" style="display:none">
+                              <div class="settings-card">
+                                <h3>索引识别</h3>
+                                <div class="subtitle">AI识别图片库中的图片时使用的提示词。</div>
+                                <textarea id="cfgImageRecIndexPrompt" rows="12"></textarea>
+                                <div class="actions" style="justify-content:flex-end">
+                                  <button class="btn btn-outline btn-sm" onclick="loadAllPrompts()"><i data-lucide="refresh-cw"></i> 刷新</button>
+                                  <button class="btn btn-primary" onclick="savePromptByName('image_recognition_index')"><i data-lucide="check"></i> 保存</button>
+                                </div>
+                              </div>
+                            </div>
+              <div id="tabModelConfig" class="settings-tab-content" style="display:none">
+                              <div class="settings-card">
+                                <h3>模型</h3>
+                                <div class="subtitle">选择不同用途使用的模型。</div>
+                                <div style="margin-bottom:16px">
+                                  <button class="btn btn-outline btn-sm" onclick="toggleModelPopup()"><i data-lucide="list"></i> 管理模型</button>
+                                </div>
+                                <div style="padding:8px 12px;background:var(--bg);border-radius:6px;margin-bottom:12px;font-size:12px;display:none;align-items:center;gap:8px">
+                                  <span>API状态：</span>
+                                  <span id="apiStatusIndicator" style="font-weight:600">检测中...</span>
+                                  <button class="btn btn-xs btn-outline" onclick="checkApiExpiry()" style="margin-left:auto"><i data-lucide="refresh-cw"></i> 刷新</button>
+                                </div>
+                  <div id="apiStatusDetail" style="font-size:11px"></div>
+                  <div class="model-group">
+                                      <div class="model-group-label">话术生成 <span id="statusChat" style="margin-left:8px;font-size:12px"></span></div>
+                                      <select id="selChatModel" onchange="onChangeModelType('chat')"></select>
+                                      <div class="model-info" id="chatModelInfo"></div>
+                                    </div>
+                                    <div class="model-group">
+                                      <div class="model-group-label">图片识别 <span id="statusVision" style="margin-left:8px;font-size:12px"></span></div>
+                                      <select id="selVisionModel" onchange="onChangeModelType('vision')"></select>
+                                      <div class="model-info" id="visionModelInfo"></div>
+                                    </div>
+                                    <div class="model-group">
+                                      <div class="model-group-label">图片生成 <span id="statusImagegen" style="margin-left:8px;font-size:12px"></span></div>
+                                      <select id="selImageGenModel" onchange="onChangeModelType('imagegen')"></select>
+                                      <div class="model-info" id="imagegenModelInfo"></div>
+                                    </div>
+                                    <div class="model-group">
+                                      <div class="model-group-label">向量模型 <span id="statusEmbedding" style="margin-left:8px;font-size:12px"></span></div>
+                                      <select id="selEmbeddingModel" onchange="onChangeModelType('embedding')"></select>
+                                      <div class="model-info" id="embeddingModelInfo"></div>
+                                    </div>
+                                    <div style="margin-top:16px">
+                                      <button class="btn btn-outline btn-sm" onclick="refreshModelStatus()"><i data-lucide="refresh-cw"></i> 刷新状态</button>
+                                      <span id="modelConfigStatus" style="margin-left:8px;font-size:12px"></span>
+                                    </div>
+                </div>
+              </div>
+              <div id="tabBannedWords" class="settings-tab-content" style="display:none">
+                <div class="settings-card">
+                  <h3>违禁词</h3>
+                  <div class="subtitle">生成话术时禁止出现的词。每行写一个。</div>
+                  <textarea id="cfgBannedWords" rows="8"></textarea>
+                  <div class="actions" style="justify-content:flex-end">
+                    <button class="btn btn-primary" onclick="saveBannedWords()"><i data-lucide="check"></i> 保存</button>
+                  </div>
+                </div>
+              </div>
+              <div id="tabData" class="settings-tab-content" style="display:none">
+                <div class="settings-card">
+                  <h3>数据管理</h3>
+                  <div class="subtitle">导出所有客户数据、消息记录、系统提示词等；导入可恢复数据。</div>
+                  <div class="actions" style="justify-content:flex-start">
+                    <button class="btn btn-outline" onclick="exportAllData()"><i data-lucide="download"></i> 导出数据</button>
+                    <button class="btn btn-outline" onclick="document.getElementById('importFileInput').click()"><i data-lucide="upload"></i> 导入数据</button>
+                    <input type="file" id="importFileInput" accept=".json" style="display:none" onchange="importAllData(event)">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 底栏 --><!-- 底栏 -->
+  <div class="footer" style="justify-content:center">
+  </div>
+
+<!-- 模型弹出列表 -->
+<div class="hidden popup-overlay" id="modelPopupOverlay" onclick="closeModelPopup()"></div>
+<div class="hidden popup-card" id="modelPopup">
+  <div style="padding:12px 16px;font-weight:600;font-size:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:var(--bg-surface);z-index:1">🤖 已配置模型<button class="btn btn-outline btn-sm" onclick="showAddModelForm()">✏️ 编辑</button></div>
+  <div id="modelList" style="max-height:400px;overflow-y:auto"></div>
+</div>
+
+<!-- 添加模型表单弹窗 -->
+<div class="hidden modal-overlay" id="addModelModal">
+  <div class="modal-card" style="width:440px">
+    <div class="modal-header">
+      <h3>✏️ 添加模型</h3>
+      <button class="modal-close-btn" onclick="closeAddModelForm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="text" id="newApiKey" placeholder="sk-...">
+      </div>
+      <div class="form-group">
+        <label>Base URL</label>
+        <input type="text" id="newBaseUrl" placeholder="https://token.sensenova.cn/v1">
+      </div>
+      <div class="form-group">
+        <label>模型 ID</label>
+        <input type="text" id="newModelId" placeholder="例如: deepseek-v4-flash">
+      </div>
+      <div class="form-group">
+        <label>供应商名称</label>
+        <input type="text" id="newProvider" placeholder="例如: sensenova（可选）">
+      </div>
+            <div class="form-group">
+                          <label>模型用途（可多选）</label>
+                          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px">
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px"><input type="checkbox" id="catChat" checked> 💬 话术生成</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px"><input type="checkbox" id="catVision"> 👁️ 图片识别</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px"><input type="checkbox" id="catImageGen"> 🎨 图片生成</label>
+                            <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:13px"><input type="checkbox" id="catEmbedding"> 📐 向量模型</label>
+                          </div>
+                        </div>
+                        <div class="form-group" id="apiModeGroup" style="display:none">
+                          <label>API 模式</label>
+                          <select id="newApiMode" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:var(--bg-input);color:var(--text);">
+                            <option value="openai">OpenAI 兼容（默认）</option>
+                            <option value="dashscope_text">DashScope 文本向量</option>
+                            <option value="dashscope_multimodal">DashScope 多模态向量</option>
+                          </select>
+                        </div>
+                        <script>
+                          document.getElementById('catEmbedding').addEventListener('change', function() {
+                            document.getElementById('apiModeGroup').style.display = this.checked ? 'block' : 'none';
+                          });
+                        </script>
+                        <button class="btn btn-outline btn-sm" onclick="testNewModel()" id="testModelBtn">🔄 测试连接</button>
+      <span id="testResult" style="margin-left:8px;font-size:13px"></span>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="closeAddModelForm()">取消</button>
+        <button class="btn btn-primary" onclick="saveNewModel()">💾 保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 话术弹窗 -->
+<div class="hidden modal-overlay" id="scriptModal">
+  <div class="modal-card">
+    <div class="modal-header">
+      <h3>✨ 生成的话术</h3>
+      <button class="modal-close-btn" onclick="closeModal('scriptModal')">✕</button>
+    </div>
+    <div class="modal-body" id="scriptContent"></div>
+  </div>
+</div>
+
+<!-- 客户图片弹窗 -->
+<div class="hidden modal-overlay" id="imageModal">
+  <div class="modal-card" style="width:640px">
+    <div class="modal-header">
+      <h3>🖼️ 客户图片</h3>
+      <button class="modal-close-btn" onclick="closeModal('imageModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input type="file" id="imageModalInput" accept="image/*" style="display:none" onchange="uploadCustomerImage(event)">
+        <button class="btn btn-primary btn-sm" onclick="document.getElementById('imageModalInput').click()">📤 上传图片</button>
+      </div>
+      <div id="imageGallery" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px">
+        <div style="text-align:center;padding:40px;color:var(--text-secondary)">暂无图片</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 客户编辑弹窗 -->
+<div class="hidden modal-overlay" id="customerDialog">
+  <div class="modal-card" style="width:520px">
+    <div class="modal-header">
+      <h3 id="customerDialogTitle">新建客户</h3>
+      <button class="modal-close-btn" onclick="closeModal('customerDialog')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editCustomerId">
+      <div class="form-group">
+        <label>智能识别（支持格式：26.6.7宋玉玲46/163/128/10 或 26525郑海燕160.130.50）</label>
+        <input type="text" id="smartParseInput" placeholder="粘贴客户信息，点击智能识别" oninput="autoParse()">
+        <button class="btn btn-sm btn-outline" style="margin-top:4px" onclick="parseCustomerText()">🔍 智能识别</button>
+      </div>
+      <div class="form-group"><label>姓名 *</label><input type="text" id="dlgName" placeholder="必填"></div>
+      <div class="form-group"><label>称呼</label><input type="text" id="dlgTitle" placeholder="例如: 大哥、姐"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group"><label>年龄</label><input type="text" id="dlgAge"></div>
+        <div class="form-group"><label>身高(cm)</label><input type="text" id="dlgHeight"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group"><label>体重(斤)</label><input type="text" id="dlgWeight"></div>
+        <div class="form-group"><label>目标体重</label><input type="text" id="dlgTargetWeight"></div>
+      </div>
+      <div class="form-group"><label>购买记录</label><input type="text" id="dlgPurchase" placeholder="例如: 60mg体验装" oninput="autoCalcCustomerType()"></div>
+      <div class="form-group"><label>客户类型</label><select id="dlgCustomerType"><option value="">自动</option><option value="cid">CID客户（未购买）</option><option value="treatment">疗程客户（&lt;2970元）</option><option value="package">套餐客户（≥2970元）</option></select></div>
+      <div class="form-group"><label>备注</label><textarea id="dlgRemark" rows="3"></textarea></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+        <button class="btn btn-outline" onclick="closeModal('customerDialog')">取消</button>
+        <button class="btn btn-primary" onclick="saveCustomer()">💾 保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== 状态 =====
+let customers = [];
+let selectedCustomerId = null;
+let messages = [];
+let _selectedDocId = null;
+let allModels = [];
+let defaultModelId = '';
+let currentModelLabel = '';
+
+// ===== API 工具 =====
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    const err = await r.text().catch(() => r.statusText);
+    throw new Error(`HTTP ${r.status}: ${err.slice(0,100)}`);
+  }
+  return r.json();
+}
+function escapeHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
+
+// ===== Toast =====
+function showToast(msg) {
+  const t = document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),2500);
+}
+
+// ===== 弹窗 =====
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); document.getElementById(id).style.display='flex'; }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); document.getElementById(id).style.display='none'; }
+
+// 自定义确认弹窗（替代原生 confirm）
+function showConfirm(msg, title='确认操作') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card" style="width:400px">
+        <div class="modal-header"><h3>${escapeHtml(title)}</h3></div>
+        <div class="modal-body" style="font-size:14px;line-height:1.6">${escapeHtml(msg)}</div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="confirmNo">取消</button>
+          <button class="btn btn-danger" id="confirmYes">确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#confirmYes').onclick = () => { overlay.remove(); resolve(true); };
+    overlay.querySelector('#confirmNo').onclick = () => { overlay.remove(); resolve(false); };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(false); } };
+  });
+}
+
+// 自定义输入弹窗（替代原生 prompt）
+function showPrompt(msg, defaultValue='', title='输入') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card" style="width:450px">
+        <div class="modal-header"><h3>${escapeHtml(title)}</h3></div>
+        <div class="modal-body">
+          <div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">${escapeHtml(msg)}</div>
+          <input id="promptInput" class="form-input" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none" value="${escapeHtml(defaultValue)}">
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="promptCancel">取消</button>
+          <button class="btn btn-primary" id="promptOk">确定</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const input = overlay.querySelector('#promptInput');
+    input.focus();
+    input.select();
+    overlay.querySelector('#promptOk').onclick = () => { overlay.remove(); resolve(input.value); };
+    overlay.querySelector('#promptCancel').onclick = () => { overlay.remove(); resolve(null); };
+    input.onkeydown = e => { if (e.key === 'Enter') { overlay.remove(); resolve(input.value); } };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(null); } };
+  });
+}
+
+// 自定义提示弹窗（替代原生 alert）
+function showAlert(msg, title='提示') {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card" style="width:400px">
+        <div class="modal-header"><h3>${escapeHtml(title)}</h3></div>
+        <div class="modal-body" style="font-size:14px;line-height:1.6">${escapeHtml(msg)}</div>
+        <div class="modal-footer">
+          <button class="btn btn-primary" id="alertOk">知道了</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#alertOk').onclick = () => { overlay.remove(); resolve(); };
+    overlay.onclick = e => { if (e.target === overlay) { overlay.remove(); resolve(); } };
+  });
+}
+
+// 图片生成失败弹窗（含重试按钮）
+function showGenError(desc, errorMsg, onRetry) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-card" style="width:450px">
+      <div class="modal-header"><h3>⚠️ 图片生成失败</h3></div>
+      <div class="modal-body">
+        <div style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">${escapeHtml(desc)}</div>
+        <div style="background:#fff5f5;border:1px solid #ffcdd2;border-radius:8px;padding:12px;font-size:13px;color:#c62828;line-height:1.5">
+          ${errorMsg || '所有模型均生成失败'}
+        </div>
+      </div>
+      <div class="modal-footer">
+        ${onRetry ? '<button class="btn btn-primary" id="genRetryBtn">🔄 重试</button>' : ''}
+        <button class="btn btn-outline" id="genCloseBtn">关闭</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  if (onRetry) overlay.querySelector('#genRetryBtn').onclick = () => { overlay.remove(); onRetry(); };
+  overlay.querySelector('#genCloseBtn').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+// ===== 页面切换 =====
+function showPage(page) {
+  const ca = document.getElementById('chatArea');
+  if (ca) {
+    ca.style.display = page === 'chat' ? 'flex' : 'none';
+    ca.classList.toggle('hidden', page !== 'chat');
+  }
+  
+  const kb = document.getElementById('pageKnowledge');
+  kb.style.display = page === 'knowledge' ? 'flex' : 'none';
+  kb.classList.toggle('hidden', page !== 'knowledge');
+  
+  const st = document.getElementById('pageSettings');
+      st.style.display = page === 'settings' ? 'flex' : 'none';
+      st.classList.toggle('hidden', page !== 'settings');
+      if (page === 'settings') { switchSettingsTab('tabSystemPrompt'); }
+      const sb = document.getElementById('pageCustomers');
+      if (sb) sb.classList.toggle('hidden', page === 'settings');
+  
+      const ma = document.getElementById('pageMain');
+      if (page === 'settings') {
+        ma.style.position = 'relative';
+        st.style.position = 'absolute';
+        st.style.inset = '0';
+      } else {
+        ma.style.position = '';
+        st.style.position = '';
+        st.style.inset = '';
+      }
+  
+  const ii = document.getElementById('pageImageIndex');
+  ii.style.display = page === 'imageindex' ? 'flex' : 'none';
+  ii.classList.toggle('hidden', page !== 'imageindex');
+  
+  // 按钮高亮
+  document.querySelectorAll('.header-right .btn-icon').forEach(b=>b.classList.remove('active'));
+  if (page === 'knowledge') document.getElementById('btnKnowledge').classList.add('active');
+  if (page === 'settings') document.getElementById('btnSettings').classList.add('active');
+}
+
+// ===== 客户列表（三大类折叠） =====
+let customerGroups = [];
+let expandedCategories = new Set();
+let _followUpData = { silent: {}, groupCounts: {} };  // 跟进数据
+
+async function loadCustomers(search = '') {
+  try {
+    if (search) {
+      const r = await api('GET', '/api/customers' + (search ? '?search='+encodeURIComponent(search) : ''));
+      customers = r.customers || [];
+      renderCustomerList();
+    } else {
+      const r = await api('GET', '/api/customers/grouped');
+      customerGroups = r.groups || [];
+      customers = [];
+      // 加载跟进数据
+      try {
+        const f = await api('GET', '/api/follow-up?days=3');
+        const silentMap = {};
+        const groupCounts = {};
+        for (const c of (f.customers || [])) {
+          silentMap[c.id] = c.silent_days;
+        }
+        // 计算每组沉默客户数
+        for (const g of customerGroups) {
+          let cnt = 0;
+          for (const c of (g.customers || [])) {
+            if (silentMap[c.id]) cnt++;
+          }
+          if (cnt > 0) groupCounts[g.id] = cnt;
+        }
+        _followUpData = { silent: silentMap, groupCounts: groupCounts };
+        // 更新铃铛角标
+        const totalSilent = (f.customers || []).length;
+        const badge = document.getElementById('followUpBadge');
+        if (badge) {
+          badge.textContent = totalSilent > 0 ? totalSilent : '';
+          badge.style.display = totalSilent > 0 ? 'block' : 'none';
+        }
+      } catch(e) { /* 静默 */ }
+      renderCustomerList();
+    }
+  } catch(e) { showToast('加载客户失败: '+e.message); }
+}
+function toggleCategory(catId) {
+  const body = document.getElementById('catBody_'+catId);
+  const arrow = document.getElementById('catArrow_'+catId);
+  if (!body) return;
+  const isExpanded = body.classList.contains('expanded');
+  if (isExpanded) {
+    body.classList.remove('expanded');
+    if (arrow) arrow.classList.remove('expanded');
+    expandedCategories.delete(catId);
+  } else {
+    body.classList.add('expanded');
+    if (arrow) arrow.classList.add('expanded');
+    expandedCategories.add(catId);
+  }
+}
+function renderCustomerItem(c) {
+  const silentDays = _followUpData.silent[c.id];
+  let badgeHtml = '';
+  if (silentDays) {
+    const color = silentDays > 7 ? '#e53935' : '#f57c00';
+    badgeHtml = '<span style="margin-left:6px;font-size:10px;font-weight:700;color:' + color + '">' + silentDays + '天</span>';
+  }
+  return `<div class="sidebar-item ${c.id === selectedCustomerId ? 'active':''}" data-cid="${c.id}" onclick="selectCustomer(${c.id})">
+    <div class="top-row">
+      <div class="name">${escapeHtml(c.name)}${c.title ? ' ('+escapeHtml(c.title)+')' : ''}${badgeHtml}</div>
+      <div class="customer-actions">
+        <button onclick="event.stopPropagation();editCustomer(${c.id})" title="编辑">✏️</button>
+        <button class="del-icon" onclick="event.stopPropagation();deleteCustomer(${c.id})" title="删除">🗑️</button>
+      </div>
+    </div>
+    <div class="preview">${escapeHtml(c.purchase || '')}${c.remark ? ' · '+escapeHtml(c.remark.slice(0,20)): ''}</div>
+  </div>`;
+}
+function renderCustomerList() {
+  const el = document.getElementById('customerList');
+  const searchVal = document.getElementById('customerSearch').value.trim();
+  if (searchVal) {
+    if (!customers.length) {
+      el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary)">无匹配客户</div>';
+      return;
+    }
+    el.innerHTML = customers.map(c => renderCustomerItem(c)).join('');
+    return;
+  }
+  if (!customerGroups || !customerGroups.length) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary)">暂无客户<br><button class="btn btn-primary btn-sm" style="margin-top:8px" onclick="showAddCustomer()">➕ 新建客户</button></div>';
+    return;
+  }
+  const icons = { cid: '🔵', treatment: '🟢', package: '🟠' };
+  el.innerHTML = customerGroups.map(g => {
+    const catId = g.id;
+    const isEmpty = g.customers.length === 0;
+    const icon = icons[catId] || '🔵';
+    return `
+    <div class="category-group">
+      <div class="category-header" onclick="toggleCategory('${catId}')">
+        <span class="arrow" id="catArrow_${catId}">▶</span>
+        <span class="cat-label">${icon} ${g.label}</span>
+        <span class="cat-count">${g.count}</span>
+        ${_followUpData.groupCounts[catId] ? '<span class="followup-count" style="margin-left:4px;font-size:10px;background:#f44336;color:#fff;padding:1px 5px;border-radius:8px;font-weight:700">' + _followUpData.groupCounts[catId] + '待跟进</span>' : ''}
+      </div>
+      <div class="category-body" id="catBody_${catId}">
+        ${isEmpty ? '<div style="padding:10px 22px;font-size:12px;color:var(--text-secondary)">暂无客户</div>' :
+          g.customers.map(c => renderCustomerItem(c)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  // 恢复展开状态
+  setTimeout(function() {
+    expandedCategories.forEach(function(catId) {
+      const body = document.getElementById('catBody_'+catId);
+      const arrow = document.getElementById('catArrow_'+catId);
+      if (body) body.classList.add('expanded');
+      if (arrow) arrow.classList.add('expanded');
+    });
+  }, 0);
+}
+function selectCustomer(id) {
+  selectedCustomerId = id;
+  // 只更新高亮，不重新渲染整个列表（防止折叠/滚动丢失）
+  document.querySelectorAll('.sidebar-item').forEach(function(el) { el.classList.remove('active'); });
+  // 找到目标客户并高亮（支持 data-cid 和 id 两种方式）
+  var target = document.querySelector('.sidebar-item[data-cid="' + id + '"]');
+  if (target) {
+    target.classList.add('active');
+    // 同时展开所在分类
+    var catBody = target.closest('.category-body');
+    if (catBody && !catBody.classList.contains('expanded')) {
+      catBody.classList.add('expanded');
+      var catId = catBody.id.replace('catBody_','');
+      var arrow = document.getElementById('catArrow_'+catId);
+      if (arrow) arrow.classList.add('expanded');
+      if (catId) expandedCategories.add(catId);
+    }
+  }
+  showPage('chat');
+  loadMessages(id);
+  document.getElementById('imagePreviewArea').innerHTML = '';
+}
+async function editCustomer(id) {
+  try {
+    const r = await api('GET', `/api/customers/${id}`);
+    const c = r.customer || {};
+    document.getElementById('customerDialogTitle').textContent = '编辑客户';
+    document.getElementById('editCustomerId').value = id;
+    document.getElementById('smartParseInput').value = '';
+    document.getElementById('dlgName').value = c.name || '';
+    document.getElementById('dlgTitle').value = c.title || '';
+    document.getElementById('dlgAge').value = c.age || '';
+    document.getElementById('dlgHeight').value = c.height || '';
+    document.getElementById('dlgWeight').value = c.weight || '';
+    document.getElementById('dlgTargetWeight').value = c.target_weight || '';
+    document.getElementById('dlgPurchase').value = c.purchase || '';
+    document.getElementById('dlgCustomerType').value = c.customer_type || '';
+    if (!c.customer_type) autoCalcCustomerType();
+    document.getElementById('dlgRemark').value = c.remark || '';
+    showModal('customerDialog');
+  } catch(e) { showToast('加载客户信息失败'); }
+}
+async function deleteCustomer(id) {
+  const ok = await showConfirm('确定删除此客户及其所有聊天记录？此操作不可恢复！', '删除客户');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/customers/${id}`);
+    if (selectedCustomerId === id) { selectedCustomerId = null; document.getElementById('chatContainer').innerHTML = ''; }
+    await loadCustomers(document.getElementById('customerSearch').value);
+    showToast('已删除');
+  } catch(e) { showToast('删除失败'); }
+}
+
+// ===== 客户图片管理 =====
+async function showCustomerImages() {
+  if (!selectedCustomerId) { showToast('请先选择客户'); return; }
+  await loadCustomerImages();
+  showModal('imageModal');
+}
+async function loadCustomerImages() {
+  const gallery = document.getElementById('imageGallery');
+  if (!selectedCustomerId) { gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">请先选择客户</div>'; return; }
+  try {
+    const r = await api('GET', `/api/customers/${selectedCustomerId}/images`);
+    const images = r.images || [];
+    if (images.length === 0) {
+      gallery.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">暂无图片，点击上方按钮上传</div>';
+      return;
+    }
+    gallery.innerHTML = images.map(img => {
+      const desc = img.description ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${img.description.substring(0, 60)}</div>` : '';
+      return `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-surface)">
+        <img src="/api/customers/images/${img.id}/file" style="width:100%;height:150px;object-fit:cover;display:block" onclick="window.open('/api/customers/images/${img.id}/file')">
+        <div style="padding:6px 8px">
+          <div style="font-size:11px;color:var(--text-secondary)">${img.original_name || img.filename}</div>
+          ${desc}
+          <div style="margin-top:4px"><button class="btn btn-sm btn-danger" onclick="deleteCustomerImage('${img.id}')" style="font-size:10px;padding:2px 8px">删除</button></div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { gallery.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败</div>'; }
+}
+async function uploadCustomerImage(event) {
+  const files = Array.from(event.target.files);
+  if (!files.length || !selectedCustomerId) return;
+  await uploadImageFiles(files);
+  event.target.value = ''; // 清空 input 以便下次选择同一文件
+}
+
+async function uploadImageFromClipboard(items) {
+  // 从剪贴板项目提取图片文件
+  const imageFiles = [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith('image/')) {
+      const blob = item.getAsFile ? item.getAsFile() : item;
+      if (blob) {
+        // 给 blob 一个合理的文件名
+        const ext = blob.type.split('/')[1] || 'png';
+        const file = new File([blob], `paste_${Date.now()}.${ext}`, { type: blob.type });
+        imageFiles.push(file);
+      }
+    }
+  }
+  if (!imageFiles.length) return false;
+  await uploadImageFiles(imageFiles);
+  return true;
+}
+
+async function uploadImageFiles(files) {
+  // 最多9张
+  const filesToUpload = files.slice(0, 9);
+  if (files.length > 9) {
+    showToast('最多上传9张图片，已自动截取前9张');
+  }
+  if (!selectedCustomerId) {
+    showToast('请先选择一个客户');
+    return;
+  }
+  const btn = document.getElementById('btnSend');
+  const imgBtn = document.getElementById('btnImgUpload');
+  btn.disabled = true;
+  imgBtn.disabled = true;
+
+  const previewArea = document.getElementById('imagePreviewArea');
+
+  // 第一步：所有图片立即显示缩略图 + 加载状态 + 删除按钮
+  const previewItems = [];
+  const uploadStatuses = {};  // previewId → 'pending'|'uploading'|'uploaded'|'cancelled'
+  for (let i = 0; i < filesToUpload.length; i++) {
+    const file = filesToUpload[i];
+    const previewId = 'preview_' + Date.now() + '_' + i;
+    const previewDiv = document.createElement('div');
+    previewDiv.className = 'preview-item';
+    previewDiv.id = previewId;
+
+    // 用 FileReader 显示本地缩略图
+    const reader = new FileReader();
+    await new Promise((resolve) => {
+      reader.onload = function(e) {
+        // 加载状态（spinner + 可删除）
+        previewDiv.innerHTML = '<img src="' + e.target.result + '"><div class="loading-overlay"><div class="spinner"></div></div><button class="remove-btn" title="取消上传">✕</button>';
+        const rmBtn = previewDiv.querySelector('.remove-btn');
+        rmBtn.onclick = function() { cancelImageUpload(previewId); };
+        previewArea.appendChild(previewDiv);
+        resolve();
+      };
+      reader.readAsDataURL(file);
+    });
+    previewItems.push({ previewId, file });
+    uploadStatuses[previewId] = 'pending';
+  }
+  // 滚动到预览区
+  previewItems[0] && document.getElementById(previewItems[0].previewId)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  // 取消上传（加载中或上传中的图片）
+  function cancelImageUpload(previewId) {
+    if (!uploadStatuses[previewId]) return;  // 已经完成或已删除
+    uploadStatuses[previewId] = 'cancelled';
+    const el = document.getElementById(previewId);
+    if (el) el.remove();
+    // 从 previewItems 中移除（阻止后续上传）
+    const idx = previewItems.findIndex(p => p.previewId === previewId);
+    if (idx >= 0) previewItems.splice(idx, 1);
+  }
+
+  // 第二步：逐张上传（顺序执行，跳过已取消的）
+  for (let i = 0; i < previewItems.length; i++) {
+    const { previewId, file } = previewItems[i];
+    // 跳过已取消的
+    if (uploadStatuses[previewId] === 'cancelled') continue;
+    uploadStatuses[previewId] = 'uploading';
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const resp = await fetch('/api/customers/' + selectedCustomerId + '/images', { method: 'POST', body: formData });
+      // 上传过程中被取消？跳过
+      if (uploadStatuses[previewId] === 'cancelled') {
+        uploadStatuses[previewId] = 'cancelled';
+        const el = document.getElementById(previewId);
+        if (el) el.remove();
+        continue;
+      }
+      const result = await resp.json();
+      const imgData = result.image || {};
+      const imgId = imgData.id;
+      if (imgId) {
+        uploadStatuses[previewId] = 'uploaded';
+        recentlyUploadedImageIds.push(imgId);
+        if (imgData.description) {
+          recentlyUploadedImageInfos.push({ id: imgId, description: imgData.description });
+        }
+        // 更新预览：去掉加载框，保留删除按钮
+        const existing = document.getElementById(previewId);
+        if (existing) {
+          const imgEl = existing.querySelector('img');
+          existing.innerHTML = '';
+          if (imgEl) existing.appendChild(imgEl.cloneNode());
+          const rmBtn = document.createElement('button');
+          rmBtn.className = 'remove-btn';
+          rmBtn.textContent = '✕';
+          rmBtn.title = '删除图片';
+          rmBtn.onclick = function() { removeImagePreview(previewId, imgId); };
+          existing.appendChild(rmBtn);
+        }
+      }
+    } catch(e) {
+      if (uploadStatuses[previewId] === 'cancelled') continue;
+      // 识别失败：显示 ✕
+      const failed = document.getElementById(previewId);
+      if (failed) {
+        failed.innerHTML = failed.innerHTML.replace('<div class="loading-overlay"><div class="spinner"></div></div>', '<div class="fail-overlay">✕</div>');
+      }
+      console.warn('图片上传/识别失败:', e);
+    }
+  }
+  // 图片上传完成后，自动填充描述到输入框
+  autoFillImageDescriptions();
+
+  btn.disabled = false;
+  imgBtn.disabled = false;
+}
+// 移除图片预览（全局函数，供内联 onclick 调用）
+async function removeImagePreview(previewId, imgId) {
+// 从 DOM 移除预览
+const el = document.getElementById(previewId);
+if (el) el.remove();
+// 从内存中移除
+const idx = recentlyUploadedImageIds.indexOf(imgId);
+if (idx >= 0) recentlyUploadedImageIds.splice(idx, 1);
+// 从描述数组中移除
+const infoIdx = recentlyUploadedImageInfos.findIndex(i => i.id === imgId);
+if (infoIdx >= 0) recentlyUploadedImageInfos.splice(infoIdx, 1);
+// 从后端删除图片记录
+try {
+await api('DELETE', `/api/customers/images/${imgId}`);
+} catch(e) { /* ignore */ }
+}
+  async function deleteCustomerImage(imgId) {
+  const ok = await showConfirm('确定删除此图片？', '删除图片');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/customers/images/${imgId}`);
+    await loadCustomerImages();
+    showToast('已删除');
+  } catch(e) { showToast('删除失败'); }
+}
+
+// ===== 消息 =====
+async function loadMessages(customerId) {
+  try {
+    const r = await api('GET', `/api/customers/${customerId}/messages`);
+    messages = (r.messages || []).map(m => {
+      // 后端加载时，AI消息解析为代码块格式
+      if (m.role === 'assistant' && m.content) {
+        if (m.content.includes('---')) {
+          // 含 --- 分隔的多段话术
+          const parts = m.content.split(/---/).map(p => p.trim()).filter(p => p);
+          if (parts.length > 0) {
+            m._parts = parts;
+          } else {
+            m._parts = [m.content];
+          }
+        } else {
+          // 单段话术，同样显示为代码块样式
+          m._parts = [m.content];
+        }
+        m._expanded = true;
+      }
+      return m;
+    });
+    renderMessages();
+  } catch(e) { showToast('加载消息失败: '+e.message); }
+}
+function renderMessages() {
+  const el = document.getElementById('chatContainer');
+  if (!messages.length) {
+    el.innerHTML = '<div class="chat-empty" id="chatEmpty" style="display:flex"><div class="icon">💬</div><div>' + (selectedCustomerId ? '暂无聊天记录，发送消息开始沟通' : '请选择一个客户开始沟通') + '</div></div>';
+    return;
+  }
+  el.innerHTML = messages.map((m, idx) => {
+    // 新格式：含 --- 分隔的多段话术（代码块样式）
+        if (m.role === 'assistant' && m._loading) {
+          return `
+          <div class="chat-msg ai" id="msg_${idx}">
+            <div class="thinking-dots">
+              <span class="think-dot"></span>
+              <span class="think-dot"></span>
+              <span class="think-dot"></span>
+              <span class="hint">思考中...</span>
+            </div>
+          </div>`;
+        }
+        // 流式模式：_streaming=true 但还没内容时也显示思考中
+        if (m.role === 'assistant' && m._streaming && (!m._parts || m._parts.length === 0)) {
+          return `
+          <div class="chat-msg ai" id="msg_${idx}">
+            <div class="thinking-dots">
+              <span class="think-dot"></span>
+              <span class="think-dot"></span>
+              <span class="think-dot"></span>
+              <span class="hint">生成中...</span>
+            </div>
+          </div>`;
+        }
+    if (m.role === 'assistant' && m._parts && m._parts.length > 0) {
+      const isCollapsed = !m._expanded;
+      return `
+      <div class="chat-msg ai" id="msg_${idx}">
+        <div class="script-bubble ${isCollapsed ? 'collapsed' : ''}" id="sb_${idx}">
+          ${m._parts.map((p, pi) => {
+                      // 检测是否为纯图片块
+                      const trimmed = p.trim();
+                      const isPureImage = /^\[AI图片:[^:]+:[^\]]*\]$/.test(trimmed);
+                                            if (isPureImage) {
+                                                                                          const match = trimmed.match(/^\[AI图片:([^:]+):([^\]]*)\]$/);
+                                                                                          const filename = match ? match[1] : '';
+                                                                                          const desc = match ? match[2] : '';
+                                                                                          // 查找相似图片
+                                                                                          var simHtml = '';
+                                                                                          if (m._local_matches && m._local_matches.length > 0) {
+                                                                                            simHtml = renderSimilarImages(m._local_matches);
+                                                                                          }
+                                                                                          return `
+                                                                                      <div class="script-block generated-image-card">
+                                                                                        <div class="script-block-header" style="justify-content:space-between">
+                                                                                          <span style="font-size:12px;color:#999">📷 生成图片</span>
+                                                                                          <div style="display:flex;gap:4px">
+                                                                                            <button class="gen-replace-btn" onclick="replaceImage(${idx},${pi},'${filename}','${desc}')">🔄 替换</button>
+                                                                                            <button class="cp-btn" onclick="copyGenImage('${filename}','${desc}')" title="复制图片到剪贴板">📋</button>
+                                                                                          </div>
+                                                                                        </div>
+                                                                                        <div class="generated-image-content">
+                                                                                          <img src="/api/generated_images/${filename}" alt="${desc}" onclick="window.open(this.src)" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer">
+                                                                                          <div class="generated-image-desc">${escapeHtml(desc)}</div>
+                                                                                          ${simHtml}
+                                                                                        </div>
+                                                                                      </div>`;
+                                            }
+                                            // 检测待生成的图片标记（支持部分包含）
+                                            const imgMatch = trimmed.match(/\[生成图片:\s*(.*?)\]/);
+                                            const isPendingImg = imgMatch !== null;
+                                            if (isPendingImg) {
+                                                                                          const imgDesc = imgMatch[1];
+                                                                                          const taskId = 'genimg_' + idx + '_' + pi;
+                                                                                          // 查找相似图片
+                                                                                          var pendingSimHtml = '';
+                                                                                          if (m._pending_image_matches && m._pending_image_matches[imgDesc]) {
+                                                                                            pendingSimHtml = renderSimilarImageThumbs(m._pending_image_matches[imgDesc]);
+                                                                                          }
+                                                                                          // 占位符：灰色背景框 + 取消按钮
+                                                                                          return `
+                                                                                      <div class="gen-progress-card gen-placeholder-card" id="${taskId}">
+                                                                                        <div class="gen-progress-header">
+                                                                                          <span style="font-size:12px;color:#999">🖼️ 生成图片</span>
+                                                                                          <button class="gen-action-btn gen-cancel-btn" id="${taskId}_cancel" onclick="cancelGenImg('${taskId}')">✕ 取消</button>
+                                                                                        </div>
+                                                                                        <div class="gen-prompt-box">${escapeHtml(imgDesc)}</div>
+                                                                                        ${pendingSimHtml}
+                                                                                        <div class="gen-progress-bar" style="margin-top:8px">
+                                                                                          <div class="fill" id="${taskId}_bar" style="width:0%"></div>
+                                                                                        </div>
+                                                                                        <div id="${taskId}_status" style="font-size:11px;color:#999;margin-top:4px">准备中 0%</div>
+                                                                                      </div>`;
+                                            }
+                      return `
+                    <div class="script-block">
+                      <div class="script-block-header"><button class="cp-btn" onclick="copyPart(${idx}, ${pi})">📋</button></div>
+                      <div class="script-block-content">${renderAiImages(p)}</div>
+                    </div>`;
+                    }).join('')}
+                    </div>
+                    <div class="msg-actions">
+                      <button onclick="${isCollapsed ? `expandScript(${idx})` : `collapseScript(${idx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
+                      <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+        </div>
+        <div class="time">${escapeHtml(m.timestamp || '')}</div>
+      </div>`;
+    }
+    // 用户消息：白色代码块，底部展开/折叠+删除，悬停显示
+        if (m.role === 'user') {
+          if (!m._parts || m._parts.length === 0) {
+            m._parts = [m.content];
+          }
+          const isCollapsed = !m._expanded;
+          const lines = m._parts[0].split('\n');
+          const longContent = m._parts[0].length > 80 || lines.length > 3;
+          const showFold = longContent;
+          return `
+          <div class="chat-msg user" onmouseenter="this.querySelector('.msg-actions').style.display='flex'" onmouseleave="this.querySelector('.msg-actions').style.display='none'">
+            <div class="script-block" style="margin-bottom:0">
+            <div class="script-block-header" style="justify-content:space-between">
+              <span style="font-size:10px;color:#999">${escapeHtml(m.timestamp || '')}</span>
+              <div>
+                <button class="cp-btn" onclick="event.stopPropagation();copyMessage(${idx})" title="复制">📋</button>
+              </div>
+            </div>
+            <div class="script-block-content ${isCollapsed && showFold ? 'collapsed' : ''}" id="sbContent_${idx}" style="${isCollapsed && showFold ? 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden' : ''}">${escapeHtml(m._parts[0])}</div>
+            </div>
+            ${showFold ? `<div class="msg-actions" style="display:none">
+              <button onclick="${isCollapsed ? `expandScript(${idx})` : `collapseScript(${idx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
+              <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+            </div>` : `<div class="msg-actions" style="display:none">
+              <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+            </div>`}
+          </div>`;
+    }
+    // 旧格式：AI普通文本气泡（兼容老数据）
+    const lines = m.content.split('\n').length;
+    const isLong = lines > 5;
+    return `
+    <div class="chat-msg ai">
+      <div class="msg-content ${isLong ? 'collapsed' : ''}" id="msgContent_${idx}">${escapeHtml(m.content)}</div>
+      <div class="msg-actions">
+        ${isLong ? `<button onclick="toggleMsgExpand(${idx})" id="expandBtn_${idx}">展开 ▾</button>` : ''}
+        <button onclick="copyAiText(${idx})" title="复制">📋</button>
+        <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+      </div>
+      <div class="time">${escapeHtml(m.timestamp || '')}</div>
+    </div>`;
+  }).join('');
+  el.scrollTop = el.scrollHeight;
+}
+function toggleMsgExpand(idx) {
+  const content = document.getElementById(`msgContent_${idx}`);
+  const btn = document.getElementById(`expandBtn_${idx}`);
+  if (!content) return;
+  const isCollapsed = content.classList.contains('collapsed');
+  content.classList.toggle('collapsed');
+  if (btn) btn.textContent = isCollapsed ? '收起 ▴' : '展开 ▾';
+}
+async function deleteMessage(msgId, idx) {
+  const ok = await showConfirm('确定删除此消息？', '删除消息');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/messages/${msgId}`);
+    // 用msgId找当前索引，避免idx过期
+    const realIdx = messages.findIndex(m => m.id === msgId);
+    if (realIdx !== -1) {
+      messages.splice(realIdx, 1);
+    }
+    renderMessages();
+  } catch(e) { showToast('删除失败: '+e.message); }
+}
+function copyAiText(idx) {
+  const msg = messages[idx];
+  if (!msg) return;
+  const text = msg.content;
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+function copyMessage(idx) {
+  const msg = messages[idx];
+  if (!msg) return;
+  const text = msg.content || msg._parts?.join('\n---\n') || '';
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+function expandScript(idx) {
+  const m = messages[idx];
+  if (m) m._expanded = true;
+  renderMessages();
+}
+function collapseScript(idx) {
+  const m = messages[idx];
+  if (m) m._expanded = false;
+  renderMessages();
+}
+function copyPart(idx, pi) {
+  const msg = messages[idx];
+  if (!msg) return;
+  const parts = msg._parts || [msg.content];
+  let text = parts[pi] || '';
+  if (!text) return;
+  // 复制时清除 AI图片 标记，只保留描述
+  text = text.replace(/\[AI图片:[^:]+:([^\]]*)\]/g, '（📷 $1）');
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+function copyRaw(text) {
+  navigator.clipboard.writeText(text).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  });
+  showToast('复制成功');
+}
+// ===== 发送消息（非流式） =====
+async function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = getInputText();
+  if (!text || !selectedCustomerId) {
+    if (!selectedCustomerId) showToast('请先选择一个客户');
+    return;
+  }
+
+  // 禁用按钮
+  const btn = document.getElementById('btnSend');
+  btn.disabled = true;
+
+  // 立即清除图片预览
+  document.getElementById('imagePreviewArea').innerHTML = '';
+  recentlyUploadedImageIds = [];
+  recentlyUploadedImageInfos = [];
+  _lastInputLen = 0;
+
+  // 固化当前客户ID和会话ID
+  const currentCid = selectedCustomerId;
+  const sessionId = 'c' + currentCid + '_' + Date.now();
+
+  // 显示用户消息
+  const d = new Date();
+  const ts = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+  const userMsg = { role: 'user', content: text, _parts: [text], timestamp: ts, session_id: sessionId };
+  messages.push(userMsg);
+
+  // 显示加载占位
+  const loadingMsg = { role: 'assistant', _loading: true, id: -Date.now(), timestamp: ts, session_id: sessionId };
+  messages.push(loadingMsg);
+  renderMessages();
+  input.innerHTML = '';
+  autoResize(input);
+
+  // 保存用户消息到后端
+  try {
+    const saved = await api('POST', `/api/customers/${currentCid}/messages`, {
+      role: 'user', content: text, timestamp: ts, session_id: sessionId
+    });
+    if (saved && saved.message && saved.message.id) {
+      userMsg.id = saved.message.id;
+    }
+  } catch(e) { /* 静默 */ }
+
+  // 生成话术（非流式）
+  try {
+    const genResult = await generateScript(text);
+    const parts = genResult.parts || [];
+    const local_matches = genResult.local_matches || [];
+    const pending_image_matches = genResult.pending_image_matches || {};
+    const scriptContent = parts.join('\n---\n');
+
+    // 先保存话术到后端
+    let savedResp = null;
+    try {
+      savedResp = await api('POST', `/api/customers/${currentCid}/messages`, {
+        role: 'assistant', content: scriptContent, timestamp: ts, session_id: sessionId
+      });
+    } catch(e) { /* 静默 */ }
+
+    // 更新前端显示
+    const loadIdx = messages.indexOf(loadingMsg);
+    if (loadIdx !== -1 && parts.length > 0) {
+      const newId = (savedResp && savedResp.message && savedResp.message.id) ? savedResp.message.id : -(Date.now());
+      messages[loadIdx] = {
+        id: newId,
+        role: 'assistant',
+        content: scriptContent,
+        _parts: parts,
+        _expanded: true,
+        _local_matches: local_matches,
+        _pending_image_matches: pending_image_matches,
+        timestamp: ts,
+        session_id: sessionId
+      };
+      renderMessages();
+      // 逐张处理图片（本地搜索/占位）
+      if (parts.length > 0) {
+        const savedId = (savedResp && savedResp.message && savedResp.message.id) || null;
+        processPendingImages(loadIdx, parts, savedId, sessionId, ts, local_matches, pending_image_matches);
+      }
+    } else {
+      const li = messages.indexOf(loadingMsg);
+      if (li !== -1) messages.splice(li, 1);
+      renderMessages();
+    }
+  } catch(e) {
+      const li = messages.indexOf(loadingMsg);
+      if (li !== -1) messages.splice(li, 1);
+      renderMessages();
+      showToast('生成失败: '+e.message);
+    }
+
+    btn.disabled = false;
+    // 发消息后刷新跟进状态
+    loadFollowUpData();
+  }
+
+// 逐张生成图片（进度条 + 可取消）
+let _genImageTasks = {};  // taskId → {cancelled, msgIdx, msgId}
+
+function cancelGenImg(taskId) {
+  if (_genImageTasks[taskId]) _genImageTasks[taskId].cancelled = true;
+  const card = document.getElementById(taskId);
+  if (card) {
+    // 占位符消失，不再生成
+    card.innerHTML = '<div class="gen-placeholder-box" style="opacity:.4"><div class="gen-placeholder-icon">⏸️</div><div class="gen-placeholder-text">已取消</div></div>';
+  }
+}
+
+async function processPendingImages(loadIdx, parts, savedMsgId, sessionId, ts, local_matches, pending_image_matches) {
+  // 检查是否还停留在当前客户
+  if (!messages[loadIdx] || messages[loadIdx].session_id !== sessionId) return;
+
+  // 收集所有待处理图片的 taskId
+  const tasks = [];
+  for (let pi = 0; pi < parts.length; pi++) {
+    const match = parts[pi].trim().match(/^\[生成图片:\s*(.*?)\]$/);
+    if (match) {
+      const taskId = 'genimg_' + loadIdx + '_' + pi;
+      tasks.push({ taskId, desc: match[1], partIdx: pi });
+      _genImageTasks[taskId] = { cancelled: false, msgIdx: loadIdx, msgId: savedMsgId };
+    }
+  }
+  if (tasks.length === 0) return;
+
+  for (const t of tasks) {
+    if (_genImageTasks[t.taskId] && _genImageTasks[t.taskId].cancelled) continue;
+
+    const card = document.getElementById(t.taskId);
+    if (!card) continue;
+
+    try {
+      // 优先搜索本地图片索引
+      const searchResp = await fetch('/api/image-index/search?q=' + encodeURIComponent(t.desc) + '&limit=5');
+      const searchData = await searchResp.json();
+      const localImages = (searchData && searchData.data) || [];
+
+      if (localImages.length > 0) {
+        // 有本地匹配 → 展示缩略图供选择
+        let thumbsHtml = localImages.map((img, idx) => {
+          const imgId = img.id;
+          const thumbPath = '/api/image-index/images/' + imgId + '/file';
+          const cat = escapeHtml(img.category || '');
+          const desc = escapeHtml((img.description || '').slice(0, 40));
+          return '<div class="local-img-option" onclick="selectLocalImage(' + loadIdx + ',' + t.partIdx + ',\'' + imgId + '\',\'' + escapeHtml(t.desc) + '\')" style="display:inline-block;width:80px;margin:4px;cursor:pointer;text-align:center;vertical-align:top;border:1px solid #eee;border-radius:6px;padding:4px;background:#fafafa">' +
+            '<img src="' + thumbPath + '" style="width:72px;height:72px;object-fit:cover;border-radius:4px" onerror="this.style.display=\'none\'" loading="lazy">' +
+            '<div style="font-size:10px;color:#666;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + desc + '</div>' +
+            '</div>';
+        }).join('');
+        card.innerHTML =
+          '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 本地图片匹配</span></div>' +
+          '<div style="padding:8px;text-align:center">' + thumbsHtml + '</div>' +
+          '<div style="font-size:11px;color:#999;text-align:center;padding:0 8px 8px">点击图片选择使用（最多5张）</div>';
+      } else {
+        // 无本地匹配 → 展示占位图 + 提示词 + 复制按钮
+        const escapedDesc = escapeHtml(t.desc);
+        card.innerHTML =
+          '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 图片占位</span></div>' +
+          '<div class="gen-placeholder-box" style="padding:16px;text-align:center">' +
+          '  <div style="font-size:40px;margin-bottom:8px">🖼️</div>' +
+          '  <div style="font-size:13px;color:#666;margin-bottom:8px">未找到匹配图片</div>' +
+          '  <div class="gen-prompt-box" style="background:#f5f5f5;border-radius:6px;padding:10px;margin:8px 0;font-size:12px;color:#333;text-align:left;word-break:break-all">' + escapedDesc + '</div>' +
+          '  <button class="cp-btn" onclick="copyTextToClipboard(\'' + escapedDesc.replace(/'/g, "\\'") + '\')" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button>' +
+          '</div>';
+      }
+    } catch(e) {
+      // 搜索失败也显示占位
+      const escapedDesc = escapeHtml(t.desc);
+      card.innerHTML =
+        '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 图片占位</span></div>' +
+        '<div class="gen-placeholder-box" style="padding:16px;text-align:center">' +
+        '  <div style="font-size:40px;margin-bottom:8px">🖼️</div>' +
+        '  <div class="gen-prompt-box" style="background:#f5f5f5;border-radius:6px;padding:10px;margin:8px 0;font-size:12px;color:#333;text-align:left;word-break:break-all">' + escapedDesc + '</div>' +
+        '  <button class="cp-btn" onclick="copyTextToClipboard(\'' + escapedDesc.replace(/'/g, "\\'") + '\')" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button>' +
+        '</div>';
+    }
+      }
+    }
+
+    // 选择本地图片
+function selectLocalImage(loadIdx, partIdx, imgId, desc) {
+  const card = document.getElementById('genimg_' + loadIdx + '_' + partIdx);
+  if (card) {
+    card.innerHTML =
+      '<div class="gen-progress-header"><span style="font-size:12px;color:#999">📷 已选择本地图片</span></div>' +
+      '<div style="text-align:center;padding:12px">' +
+      '  <img src="/api/image-index/images/' + imgId + '/file" style="max-width:100%;max-height:300px;border-radius:6px" loading="lazy">' +
+      '</div>';
+  }
+  // 更新 parts
+  if (messages[loadIdx] && messages[loadIdx]._parts && messages[loadIdx]._parts[partIdx]) {
+    messages[loadIdx]._parts[partIdx] = '[AI图片:local_' + imgId + ':' + desc + ']';
+  }
+  showToast('✅ 已选择本地图片');
+}
+
+// 复制文本到剪贴板
+function copyTextToClipboard(text) {
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('✅ 提示词已复制');
+  }).catch(function() {
+    // fallback
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('✅ 提示词已复制');
+  });
+}
+
+// ===== 相似图片展示 & 替换图片 =====
+  function renderSimilarImages(local_matches) {
+    if (!local_matches || local_matches.length === 0) return '';
+    var similarHtml = '<div class="similar-images-section"><div style="font-size:12px;color:#999;margin-bottom:6px">📋 可参考的类似图片</div><div style="display:flex;gap:6px;flex-wrap:wrap">';
+    var count = 0;
+    for (var mi = 0; mi < local_matches.length && count < 8; mi++) {
+      var matched = local_matches[mi].matched || [];
+      for (var ii = 0; ii < matched.length && count < 8; ii++) {
+        var img = matched[ii];
+        var imgId = img.id;
+        var imgDesc = (img.description || '').slice(0, 30);
+        var imgCat = img.category || '';
+        similarHtml += '<div class="similar-img-thumb" onclick="window.open(\'/api/image-index/images/' + imgId + '\')" title="' + escapeHtml(imgDesc) + '" style="width:60px;height:60px;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid #eee;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999;position:relative">';
+        similarHtml += '<img src="/api/image-index/images/' + imgId + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.textContent=\'📷\'">';
+        similarHtml += '</div>';
+        count++;
+      }
+    }
+    similarHtml += '</div></div>';
+    return similarHtml;
+      }
+
+      // 渲染单组相似图片缩略图（从 pending_image_matches 直接取数组）
+      function renderSimilarImageThumbs(images) {
+        if (!images || images.length === 0) return '';
+        var html = '<div class="similar-images-section"><div style="font-size:11px;color:#999;margin-bottom:4px">📋 本地图库中有类似图片</div><div style="display:flex;gap:4px;flex-wrap:wrap">';
+        var count = 0;
+        for (var i = 0; i < images.length && count < 4; i++) {
+          var img = images[i];
+          var imgId = img.id;
+          var imgDesc = (img.description || '').slice(0, 20);
+          html += '<div class="similar-img-thumb" onclick="window.open(\'/api/image-index/images/' + imgId + '\')" title="' + escapeHtml(img.description || '') + '" style="width:50px;height:50px;border-radius:4px;overflow:hidden;cursor:pointer;border:1px solid #eee;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999">';
+          html += '<img src="/api/image-index/images/' + imgId + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.textContent=\'📷\'">';
+          html += '</div>';
+          count++;
+        }
+        html += '</div></div>';
+        return html;
+      }
+
+      async function replaceImage(msgIdx, partIdx, oldFilename, oldDesc) {
+        // 先获取详细提示词
+        var detailedPrompt = oldDesc;
+        try {
+          var ctxResp = await fetch('/api/generate-image-prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: oldDesc, context: (messages[msgIdx] ? messages[msgIdx]._parts.slice(0,5).join('\\n') : '') })
+          });
+          if (ctxResp.ok) {
+            var ctxData = await ctxResp.json();
+            if (ctxData.detailed_prompt) detailedPrompt = ctxData.detailed_prompt;
+          }
+        } catch(e) { /* 失败则用原描述 */ }
+  
+        var newDesc = await showPrompt('输入新的图片描述（提示词）：\n\n（以下为详细提示词，可修改）', detailedPrompt);
+        if (!newDesc || newDesc.trim() === '') return;
+        newDesc = newDesc.trim();
+  
+      var msg = messages[msgIdx];
+      if (!msg || !msg._parts || !msg._parts[partIdx]) return;
+  
+      // 更新parts中的描述
+            msg._parts[partIdx] = '[生成图片: ' + newDesc + ']';
+
+            // 直接更新DOM中的对应卡片，不重新渲染所有消息
+            var taskId = 'genimg_' + msgIdx + '_' + partIdx;
+            var card = document.getElementById(taskId);
+            var newDescEscaped = escapeHtml(newDesc);
+            if (card) {
+              card.className = 'gen-progress-card gen-placeholder-card';
+              card.innerHTML = '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 生成图片</span><button class="gen-action-btn gen-cancel-btn" id="' + taskId + '_cancel" onclick="cancelGenImg(\'' + taskId + '\')">✕ 取消</button></div><div class="gen-prompt-box">' + newDescEscaped + '</div><div class="gen-progress-bar" style="margin-top:8px"><div class="fill" id="' + taskId + '_bar" style="width:0%"></div></div><div id="' + taskId + '_status" style="font-size:11px;color:#999;margin-top:4px">准备中 0%</div>';
+            } else {
+              // 如果没有找到卡片（DOM结构异常），fallback到重新渲染
+              renderMessages();
+              await new Promise(r => setTimeout(r, 100));
+            }
+  
+      // 生成新图片
+      var taskId = 'genimg_' + msgIdx + '_' + partIdx;
+  
+      try {
+        var bar = document.getElementById(taskId + '_bar');
+        var status = document.getElementById(taskId + '_status');
+        if (bar) { bar.style.width = '30%'; }
+        if (status) { status.textContent = '重新生成中 30%'; }
+  
+        var resp = await fetch('/api/generate_image', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: newDesc })
+        });
+  
+        if (!resp.ok) { showToast('图片生成失败'); renderMessages(); return; }
+        var data = await resp.json();
+        if (!data.filename) { showToast('生成失败：无文件名'); renderMessages(); return; }
+  
+        // 更新消息内容
+        var newContent = '[AI图片:' + data.filename + ':' + newDesc + ']';
+        msg._parts[partIdx] = newContent;
+  
+        // 更新后端保存的内容
+                if (msg.content) {
+                  msg.content = msg.content.replace('[生成图片: ' + oldDesc + ']', newContent);
+                  if (msg.id && msg.id > 0) {
+                    fetch('/api/messages/' + msg.id, {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content: msg.content })
+                    }).catch(function(){});
+                  }
+                }
+  
+                // 直接更新DOM中的卡片为已生成图片，不重新渲染全部
+                var resultCard = document.getElementById(taskId);
+                if (resultCard) {
+                  resultCard.className = 'gen-progress-card gen-placeholder-card gen-image-ready';
+                  var simHtml = '';
+                  if (msg._pending_image_matches && msg._pending_image_matches[newDesc]) {
+                    simHtml = renderSimilarImageThumbs(msg._pending_image_matches[newDesc]);
+                  }
+                  resultCard.innerHTML = '<div class="script-block generated-image-card"><div class="script-block-header" style="justify-content:space-between"><span style="font-size:12px;color:#999">📷 生成图片</span><div style="display:flex;gap:4px"><button class="gen-replace-btn" onclick="replaceImage(' + msgIdx + ',' + partIdx + ',\'' + data.filename + '\',\'' + newDesc.replace(/'/g, "\\'") + '\')">🔄 替换</button><button class="cp-btn" onclick="copyGenImage(\'' + data.filename + '\',\'' + newDesc.replace(/'/g, "\\'") + '\')" title="复制图片到剪贴板">📋</button></div></div><div class="generated-image-content"><img src="/api/generated_images/' + data.filename + '" alt="' + escapeHtml(newDesc) + '" onclick="window.open(this.src)" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer"><div class="generated-image-desc">' + escapeHtml(newDesc) + '</div>' + simHtml + '</div></div>';
+                } else {
+                  renderMessages();
+                }
+                showToast('✅ 图片已替换');
+              } catch(e) {
+                showToast('替换失败: ' + e.message);
+                // 只重新渲染当前消息，不全部重置
+                renderMessages();
+              }
+    }
+
+  let recentlyUploadedImageIds = [];
+// 最近上传的图片信息（id + description）
+let recentlyUploadedImageInfos = [];
+
+// 渲染带 [AI图片:文件名:描述] 标记的文本为安全HTML
+function renderAiImages(text) {
+  // 先执行 HTML 转义，然后替换 [AI图片:] 标记为 img 标签
+  let safe = escapeHtml(text);
+  safe = safe.replace(/\[AI图片:([^:]+):([^\]]*)\]/g, function(match, filename, desc) {
+    return '<div style="margin:10px 0;text-align:center;background:#f9f9f9;border-radius:8px;padding:8px;border:1px solid #eee"><img src="/api/generated_images/' + encodeURIComponent(filename) + '" alt="' + escapeHtml(desc) + '" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer" onclick="window.open(this.src)" loading="lazy"><div style="margin-top:6px;font-size:12px;color:#666">📷 ' + escapeHtml(desc) + '</div></div>';
+  });
+  return safe;
+}
+
+// 复制生成的图片到剪贴板
+function copyGenImage(filename, desc) {
+  fetch('/api/generated_images/' + encodeURIComponent(filename))
+    .then(r => r.blob())
+    .then(blob => {
+      const item = new ClipboardItem({ [blob.type]: blob });
+      navigator.clipboard.write([item]).then(() => {
+        showToast('图片已复制到剪贴板');
+      }).catch(() => {
+        // fallback: 下载方式
+        const link = document.createElement('a');
+        link.href = '/api/generated_images/' + encodeURIComponent(filename);
+        link.download = desc + '.png';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('已下载图片（复制剪贴板失败）');
+      });
+    }).catch(() => {
+      showToast('获取图片失败');
+    });
+}
+
+// ===== 生成话术 =====
+async function generateScript(userText) {
+  if (!selectedCustomerId) { showToast('请先选择一个客户'); return {parts: [], local_matches: []}; }
+  
+  const recent = userText || getInputText();
+  if (!recent && recentlyUploadedImageIds.length === 0) return {parts: [], local_matches: []};
+  
+  // 获取设置
+  const settingsResp = await api('GET', '/api/settings');
+  const settings = settingsResp || {};
+  
+  // 携带最近上传的图片ID
+  const imageIds = [...recentlyUploadedImageIds];
+  
+  // 生成话术
+    const tags = getTagsFromInput();
+    const genResp = await api('POST', '/api/generate', {
+      customer_id: selectedCustomerId,
+      recent_messages: recent,
+      settings: settings,
+      tags: tags,
+      current_time: (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');})(),
+      image_ids: imageIds
+    });
+  
+  // 图片预览已由 sendMessage 在发送时立即清除
+  
+  // 知识库搜索降级提示
+  if (genResp.degraded_reason) {
+    showToast('⚠️ 知识库' + genResp.degraded_reason);
+  }
+  
+  const script = genResp.script || '';
+  if (!script.trim()) { showToast('未生成话术内容'); return []; }
+  
+  // 解析为段落
+    let parts = script.split(/---/).map(p => p.trim()).filter(p => p);
+  
+    // 再展开：如果段落内嵌了 [生成图片: ...]，把它独立出来
+    const expanded = [];
+    for (const part of parts) {
+      if (/\[生成图片:\s*.*?\]/.test(part)) {
+        const segs = part.split(/(\[生成图片:\s*.*?\])/g);
+        for (const seg of segs) {
+          const t = seg.trim();
+          if (t) expanded.push(t);
+        }
+      } else {
+        expanded.push(part);
+      }
+    }
+    return {parts: expanded, local_matches: genResp.local_image_matches || [], pending_image_matches: genResp.pending_image_matches || {}};
+    }
+// ===== 模型管理 =====
+async function loadModelInfo() {
+  try {
+    const r = await api('GET', '/api/models/current');
+    currentModelLabel = (r.model && r.model.model) || '未配置';
+    try { document.getElementById('currentModelName').textContent = currentModelLabel; } catch(e) {}
+
+    const mr = await api('GET', '/api/models');
+    allModels = mr.models || [];
+    defaultModelId = mr.default_id || '';
+    _defaultIds = mr.default_ids || { chat: '', vision: '', imagegen: '', embedding: '' };
+  } catch(e) {
+    try { document.getElementById('currentModelName').textContent = '加载失败'; } catch(e2) {}
+  }
+}
+function toggleModelPopup() {
+  const popup = document.getElementById('modelPopup');
+  const overlay = document.getElementById('modelPopupOverlay');
+  if (popup.classList.contains('hidden')) {
+    renderModelList();
+    popup.classList.remove('hidden');
+    overlay.classList.remove('hidden');
+  } else {
+    closeModelPopup();
+  }
+}
+function closeModelPopup() {
+  document.getElementById('modelPopup').classList.add('hidden');
+  document.getElementById('modelPopupOverlay').classList.add('hidden');
+}
+function renderModelList() {
+  const el = document.getElementById('modelList');
+  if (!allModels.length) {
+    el.innerHTML = '<div style="padding:16px;text-align:center;color:var(--text-secondary)">暂无配置的模型</div>';
+    return;
+  }
+  // 从模型 categories 字段或默认ID推断分类
+  function getCat(m) {
+    const cats = m.categories;
+    if (cats && cats.length > 0) {
+      if (cats.includes('vision')) return 'vision';
+      if (cats.includes('imagegen')) return 'imagegen';
+      if (cats.includes('embedding')) return 'embedding';
+      if (cats.includes('chat')) return 'chat';
+    }
+    // fallback: 按默认ID推断
+    if (m.id === _defaultIds.vision) return 'vision';
+    if (m.id === _defaultIds.imagegen) return 'imagegen';
+    if (m.id === _defaultIds.embedding) return 'embedding';
+    // fallback: 按名字猜
+    const n = (m.model || '').toLowerCase(), id = (m.id || '').toLowerCase();
+    if (n.includes('embedding') || id.includes('embedding')) return 'embedding';
+    if (n.includes('v-flash') || n.includes('4v') || n.includes('vision') || n.includes('omni-turbo')) return 'vision';
+    if (n.includes('cogview') || n.includes('image') || id.includes('image_gen') || id.includes('imagegen')) return 'imagegen';
+    return 'chat';
+  }
+  const catInfo = [
+    { key: 'chat', label: '💬 话术生成模型' },
+    { key: 'vision', label: '👁️ 图片识别模型' },
+    { key: 'imagegen', label: '🎨 图片生成模型' },
+    { key: 'embedding', label: '📐 向量模型' }
+  ];
+  let html = '';
+  for (const cat of catInfo) {
+    const models = allModels.filter(m => getCat(m) === cat.key);
+    if (models.length === 0) continue;
+    html += '<div style="padding:8px 14px 4px;font-weight:600;font-size:12px;color:var(--text-secondary)">' + cat.label + '</div>';
+    html += models.map(m => {
+          return '<div class="popup-item" style="padding:6px 14px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center;min-height:36px">' +
+            '<div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(m.model) + '</div>' +
+            '<button class="delete-btn" onclick="event.stopPropagation();removeModel(\'' + m.id + '\')" style="font-size:12px;padding:2px 6px;border:none;background:transparent;cursor:pointer;color:#e53935">✕</button>' +
+          '</div>';
+    }).join('');
+  }
+  el.innerHTML = html;
+}
+
+function showCategoryModels(categoryKey) {
+  const categories = {
+    chat: { label: '💬 话术生成模型', defaultId: _defaultIds.chat || defaultModelId },
+    vision: { label: '👁️ 图片识别模型', defaultId: _defaultIds.vision },
+    imagegen: { label: '🎨 图片生成模型', defaultId: _defaultIds.imagegen },
+    embedding: { label: '📐 向量模型', defaultId: _defaultIds.embedding }
+  };
+  const cat = categories[categoryKey];
+  if (!cat) return;
+  // 辅助：判断模型分类
+  function getModelCategory(model) {
+    if (model.id === _defaultIds.vision) return 'vision';
+    if (model.id === _defaultIds.imagegen) return 'imagegen';
+    if (model.id === _defaultIds.embedding) return 'embedding';
+    const name = (model.model || '').toLowerCase();
+    const id = (model.id || '').toLowerCase();
+    if (name.includes('embedding') || id.includes('embedding')) return 'embedding';
+    if (name.includes('v-flash') || name.includes('4v') || name.includes('vision') || name.includes('omni-turbo')) return 'vision';
+    if (name.includes('cogview') || name.includes('image') || id.includes('image_gen') || id.includes('imagegen')) return 'imagegen';
+    return 'chat';
+  }
+  const catModels = allModels.filter(m => getModelCategory(m) === categoryKey);
+  const isChat = categoryKey === 'chat';
+  const el = document.getElementById('modelList');
+  el.innerHTML =
+    '<div style="padding:8px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">' +
+      '<button class="btn btn-sm" onclick="renderModelList()" style="background:none;border:none;cursor:pointer;font-size:16px">‹ 返回</button>' +
+      '<span style="font-weight:600;font-size:13px">' + cat.label + '</span>' +
+    '</div>' +
+    (catModels.length === 0
+      ? '<div style="padding:16px;text-align:center;color:var(--text-secondary)">暂无此分类模型</div>'
+      : catModels.map(m => {
+          const isDefault = m.id === cat.defaultId;
+          return '<div class="popup-item" style="padding:10px 14px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between;align-items:center">' +
+            '<div class="model-info" style="flex:1;min-width:0">' +
+              '<div class="name" style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(m.model) + '</div>' +
+              '<div class="provider" style="font-size:11px;color:var(--text-secondary)">' + escapeHtml(m.provider) + '</div>' +
+            '</div>' +
+            '<div style="display:flex;gap:4px;align-items:center;flex-shrink:0">' +
+              (isChat
+                ? (isDefault
+                    ? '<span class="badge" style="font-size:11px;padding:2px 6px;background:#e8f5e9;color:#2e7d32;border-radius:4px">默认</span>'
+                    : '<button class="toggle-btn" onclick="event.stopPropagation();setCategoryDefault(\'' + categoryKey + '\',\'' + m.id + '\')" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:4px;background:transparent;cursor:pointer">设为默认</button>')
+                : ''
+              ) +
+              '<button class="delete-btn" onclick="event.stopPropagation();removeModel(\'' + m.id + '\')" style="font-size:13px;padding:3px 6px;border:none;background:transparent;cursor:pointer;color:#e53935">✕</button>' +
+            '</div>' +
+          '</div>';
+        }).join('')
+    );
+}
+
+async function setCategoryDefault(categoryKey, modelId) {
+  const suffixMap = { chat: '/default', vision: '/vision-default', imagegen: '/image-gen-default', embedding: '/embedding-default' };
+  const labelMap = { chat: '话术生成', vision: '图片识别', imagegen: '图片生成', embedding: '向量' };
+  try {
+    await api('PUT', '/api/models/' + modelId + suffixMap[categoryKey]);
+    showToast('✅ 已设为' + labelMap[categoryKey] + '默认模型');
+    await loadModelInfo();
+    showCategoryModels(categoryKey);
+  } catch(e) { showToast('设置失败: ' + e.message); }
+}
+async function setDefault(modelId) {
+  try {
+    await api('PUT', `/api/models/${modelId}/default`);
+    showToast('已设为默认模型');
+    await loadModelInfo();
+    closeModelPopup();
+  } catch(e) { showToast('设置失败: '+e.message); }
+}
+async function removeModel(modelId) {
+  if (!(await showConfirm('确定删除此模型？'))) return;
+  try {
+    await api('DELETE', `/api/models/${modelId}`);
+    showToast('已删除');
+    // 刷新模型信息
+    await loadModelInfo();
+    renderModelList();
+    // 刷新设置页的下拉框（如果设置页是打开的）
+    try { loadModelConfigTab(); } catch(e) {}
+    // 检查被删除的模型是否曾是默认，如果是则自动选下一个
+    // 从最新列表中找到各分类的第一个模型作为新的默认
+    _defaultIds = _defaultIds || { chat: '', vision: '', imagegen: '', embedding: '' };
+    const currDefaultIds = { ..._defaultIds };
+    const catKeys = ['chat', 'vision', 'imagegen', 'embedding'];
+    const labelMap = { chat: '话术生成', vision: '图片识别', imagegen: '图片生成', embedding: '向量' };
+    const suffixMap = { chat: '/default', vision: '/vision-default', imagegen: '/image-gen-default', embedding: '/embedding-default' };
+    for (const key of catKeys) {
+      if (modelId === currDefaultIds[key]) {
+        // 被删的是默认模型，找下一个同分类的模型
+        const models = _modelList || allModels;
+        // 用 getCat 判断分类（复用的函数在 renderModelList 里）
+        const next = models.find(m => {
+          if (m.id === modelId) return false;
+          const cats = m.categories || [];
+          if (cats.includes(key)) return true;
+          // fallback 判断
+          if (m.id === _defaultIds.vision) return key === 'vision';
+          if (m.id === _defaultIds.imagegen) return key === 'imagegen';
+          if (m.id === _defaultIds.embedding) return key === 'embedding';
+          const n = (m.model || '').toLowerCase(), id = (m.id || '').toLowerCase();
+          if (key === 'embedding' && (n.includes('embedding') || id.includes('embedding'))) return true;
+          if (key === 'vision' && (n.includes('v-flash') || n.includes('4v') || n.includes('vision') || n.includes('omni-turbo'))) return true;
+          if (key === 'imagegen' && (n.includes('cogview') || n.includes('image') || id.includes('image_gen') || id.includes('imagegen'))) return true;
+          return key === 'chat';
+        });
+        if (next) {
+          try {
+            await api('PUT', '/api/models/' + next.id + suffixMap[key]);
+            showToast('已自动切换' + labelMap[key] + '默认模型到 ' + next.model);
+          } catch(e) {}
+        }
+      }
+    }
+    // 再次刷新
+    await loadModelInfo();
+    renderModelList();
+    try { loadModelConfigTab(); } catch(e) {}
+  } catch(e) { showToast('删除失败: '+e.message); }
+}
+function showAddModelForm() {
+  closeModelPopup();
+  document.getElementById('newApiKey').value = '';
+  document.getElementById('newBaseUrl').value = '';
+  document.getElementById('newModelId').value = '';
+  document.getElementById('newProvider').value = '';
+  document.getElementById('testResult').textContent = '';
+  // 重置用途选择（默认勾选话术生成）
+  document.getElementById('catChat').checked = true;
+  document.getElementById('catVision').checked = false;
+  document.getElementById('catImageGen').checked = false;
+  document.getElementById('catEmbedding').checked = false;
+  showModal('addModelModal');
+  }
+
+  // ===== API 状态检测 =====
+    async function checkApiExpiry() {
+      const el = document.getElementById('apiStatusIndicator');
+      if (!el) return;
+      el.textContent = '检测中...';
+      el.className = 'api-status-unknown';
+      try {
+        const r = await api('GET', '/api/check-expiry');
+        const models = r.models || [];
+        // 统计各状态
+        let okCount = models.filter(m => m.status === 'ok').length;
+        let errCount = models.filter(m => m.status === 'error').length;
+        let warnCount = models.filter(m => m.status === 'warning').length;
+        if (errCount === 0 && warnCount === 0) {
+          el.textContent = '✅ 全部正常 (' + okCount + '/' + models.length + ')';
+          el.className = 'api-status-ok';
+        } else if (errCount > 0) {
+          el.textContent = '❌ ' + errCount + ' 个异常';
+          el.className = 'api-status-error';
+        } else {
+          el.textContent = '⚠️ ' + warnCount + ' 个警告';
+          el.className = 'api-status-warning';
+        }
+        // 在状态旁边追加详细列表
+        let detailEl = document.getElementById('apiStatusDetail');
+        if (!detailEl) {
+          detailEl = document.createElement('div');
+          detailEl.id = 'apiStatusDetail';
+          detailEl.style.cssText = 'margin-top:8px;font-size:12px';
+          el.parentNode.appendChild(detailEl);
+        }
+        detailEl.innerHTML = models.map(m => {
+          const icon = m.status === 'ok' ? '✅' : m.status === 'error' ? '❌' : '⚠️';
+          const catLabel = (m.categories || []).map(c => ({chat:'话术',vision:'识别',imagegen:'生图',embedding:'向量'})[c] || c).join(',');
+          return '<div style="display:flex;align-items:center;gap:6px;padding:2px 0">' +
+            '<span>' + icon + '</span>' +
+            '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(m.model || m.id) + '</span>' +
+            (catLabel ? '<span style="color:var(--text-secondary);font-size:11px">' + catLabel + '</span>' : '') +
+            (m.message ? '<span style="color:var(--text-secondary);font-size:11px">' + escapeHtml(m.message) + '</span>' : '') +
+            '</div>';
+        }).join('');
+      } catch(e) {
+        el.textContent = '❌ 检测失败';
+        el.className = 'api-status-error';
+      }
+    }
+
+  // 在 loadModelConfigTab 加载后自动检测
+  const _origLoadModelConfigTab = loadModelConfigTab;
+  loadModelConfigTab = function() {
+    const result = _origLoadModelConfigTab.apply(this, arguments);
+    setTimeout(checkApiExpiry, 500);
+    return result;
+  };
+
+  // ===== 跟进提醒 =====
+    document.getElementById('btnFollowUp')?.addEventListener('click', async function() {
+      try {
+        const r = await api('GET', '/api/follow-up?days=3');
+        const customers = r.customers || [];
+        if (customers.length === 0) {
+          showToast('🎉 暂无需要跟进的客户');
+          return;
+        }
+
+        // 按天数分组
+        const groups = [
+          { label: '🔴 7天以上未联系', color: '#e53935', items: customers.filter(c => c.silent_days >= 7) },
+          { label: '🟠 3-6天未联系', color: '#f57c00', items: customers.filter(c => c.silent_days >= 3 && c.silent_days < 7) },
+          { label: '🟡 1-2天未联系', color: '#ffb300', items: customers.filter(c => c.silent_days >= 1 && c.silent_days < 3) }
+        ].filter(g => g.items.length > 0);
+
+        let html = '<div style="padding:0;max-height:65vh;overflow-y:auto">';
+        html += '<div class="followup-header" style="padding:12px 16px;font-weight:600;font-size:14px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg-surface);z-index:1">🔔 跟进提醒 (' + customers.length + ')</div>';
+      
+        for (const group of groups) {
+          html += '<div style="padding:6px 16px;font-size:11px;color:' + group.color + ';font-weight:600;background:var(--bg);position:sticky;top:45px">' + group.label + ' (' + group.items.length + ')</div>';
+          for (const c of group.items) {
+            const preview = (c.last_msg_preview || '').trim();
+            html += '<div class="followup-item" data-cid="' + c.id + '" onclick="handleFollowUpClick(' + c.id + ')">' +
+                          '<div style="flex:1;min-width:0">' +
+              '<div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+              escapeHtml(c.name) +
+              (c.title ? '<span style="color:var(--text-secondary);font-size:11px;margin-left:4px">(' + escapeHtml(c.title) + ')</span>' : '') +
+              '</div>' +
+              (preview ? '<div style="font-size:11px;color:var(--text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px">📝 ' + escapeHtml(preview) + '</div>' :
+               '<div style="font-size:11px;color:var(--text-secondary);margin-top:1px">暂无聊天记录</div>') +
+              '</div>' +
+              '<span style="font-size:11px;font-weight:600;color:' + group.color + ';flex-shrink:0;min-width:40px">' + c.silent_days + '天</span>' +
+              '<button onclick="event.stopPropagation();ignoreFollowUp(' + c.id + ')" ' +
+                            'style="background:none;border:1px solid var(--border);border-radius:4px;font-size:11px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);flex-shrink:0">忽略</button>' +
+                            '</div>';
+                      }
+                    }
+                    html += '</div>';
+                    // 添加 followup-item 样式
+                    html += '<style>.followup-item{padding:8px 16px;border-bottom:1px solid var(--border-light);cursor:pointer;display:flex;align-items:center;gap:8px}.followup-item:hover{background:var(--bg-secondary)}</style>';
+                    showModalDialog('跟进提醒', html);
+      } catch(e) {
+        showToast('加载失败: ' + e.message);
+      }
+    });
+
+    // 处理跟进点击
+        async function handleFollowUpClick(customerId) {
+          // 关闭跟进弹窗
+          const dlg = document.getElementById('_dialogOverlay');
+          if (dlg) dlg.remove();
+    
+          // 跳转到客户聊天
+          selectedCustomerId = customerId;
+          showPage('chat');
+          loadMessages(customerId);
+          // 打开分类并选中客户
+          document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+          const item = document.querySelector('.sidebar-item[data-cid="' + customerId + '"]');
+          if (item) {
+            item.classList.add('active');
+            item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            // 展开所属分类
+            const catBody = item.closest('.category-body');
+            if (catBody) {
+              const header = catBody.previousElementSibling;
+              if (header && header.classList.contains('category-header')) {
+                const arrow = header.querySelector('.arrow');
+                if (arrow && !arrow.classList.contains('expanded')) {
+                  arrow.click();
+                }
+              }
+            }
+          }
+
+          // 询问是否跟进
+                    const yes = await showConfirm('该客户已沉默多天，是否生成跟进话术？', '跟进提醒');
+                    if (yes) {
+                      // 在消息列表底部显示加载占位（"思考中..."位置）
+                      const loadingMsg = { role: 'assistant', _loading: true, id: -Date.now(), timestamp: '', session_id: 'followup_' + Date.now() };
+                      messages.push(loadingMsg);
+                      renderMessages();
+                      try {
+                        // 直接调 API 生成话术，不走 generateScript
+                        const tags = typeof getTagsFromInput === 'function' ? getTagsFromInput() : [];
+                        const genResp = await api('POST', '/api/generate', {
+                                                  customer_id: customerId,
+                                                  recent_messages: '跟进话术',
+                                                  tags: tags,
+                                                  image_ids: []
+                                                });
+                                                const script = genResp.script || '';
+                                                const parts = script.split('---').map(p => p.trim()).filter(p => p);
+                        // 移除加载占位
+                        const li = messages.indexOf(loadingMsg);
+                        if (li !== -1) messages.splice(li, 1);
+                        if (parts.length > 0) {
+                          const script = parts.join('\n---\n');
+                          // 把话术填入输入框
+                          const msgInput = document.getElementById('msgInput');
+                          if (msgInput) {
+                            msgInput.innerHTML = '';
+                            msgInput.style.pointerEvents = '';
+                            document.execCommand('insertHTML', false, script.replace(/\n/g, '<br>'));
+                            autoResize(msgInput);
+                          }
+                        } else {
+                          renderMessages();
+                          showToast('生成话术失败: 返回内容为空');
+                        }
+                      } catch(e) {
+                        const li = messages.indexOf(loadingMsg);
+                        if (li !== -1) messages.splice(li, 1);
+                        renderMessages();
+                        showToast('生成话术失败: ' + e.message);
+                      }
+                    }
+        };
+
+        // 忽略跟进
+        async function ignoreFollowUp(customerId) {
+              try {
+                await api('POST', '/api/follow-up/ignore', { customer_id: customerId });
+                // 从 DOM 移除该行
+                const item = document.querySelector('.followup-item[data-cid="' + customerId + '"]');
+                if (item) item.remove();
+                // 更新弹窗头部计数
+                const header = document.querySelector('.followup-header');
+                if (header) {
+                const match = header.textContent.match(/\((\d+)\)/);
+                  if (match) {
+                    const old = parseInt(match[1]);
+                    header.textContent = '🔔 跟进提醒 (' + (old - 1) + ')';
+                  }
+                }
+                // 刷新跟进数据（更新侧边栏）
+                loadFollowUpData();
+                showToast('已忽略', 2000);
+              } catch(e) {
+                showToast('操作失败: ' + e.message);
+              }
+            };
+
+    // 加载跟进数据（提供给外部调用）
+    async function loadFollowUpData() {
+      try {
+        const f = await api('GET', '/api/follow-up?days=3');
+        const silentMap = {};
+        const groupCounts = {};
+        for (const c of (f.customers || [])) {
+          silentMap[c.id] = c.silent_days;
+        }
+        for (const g of customerGroups) {
+          let cnt = 0;
+          for (const c of (g.customers || [])) {
+            if (silentMap[c.id]) cnt++;
+          }
+          groupCounts[g.id || g.label] = cnt;
+        }
+        // 合并到全局
+        const totalSilent = f.customers ? f.customers.length : 0;
+        _followUpData = { silent: silentMap, groupCounts: groupCounts };
+        // 更新badge
+        const badge = document.getElementById('followUpBadge');
+        if (badge) {
+          badge.textContent = totalSilent > 0 ? totalSilent : '';
+          badge.style.display = totalSilent > 0 ? 'block' : 'none';
+        }
+        renderCustomerList();
+      } catch(e) { /* 静默 */ }
+    };
+
+    // 弹窗包装
+
+  // 弹窗包装
+  function showModalDialog(title, contentHtml) {
+    const existing = document.getElementById('_dialogOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = '_dialogOverlay';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML =
+      '<div style="background:var(--bg-surface);border-radius:12px;max-width:480px;width:90%;max-height:80vh;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.2);animation:fadeIn .2s">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border)">' +
+      '<div style="font-weight:600;font-size:15px">' + title + '</div>' +
+      '<button onclick="this.closest(\'#_dialogOverlay\').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#999;padding:4px">✕</button></div>' +
+      '<div style="padding:0">' + contentHtml + '</div></div>';
+    overlay.addEventListener('click', function(e) { if (e.target === this) this.remove(); });
+    document.body.appendChild(overlay);
+  }
+
+  // 通过ID选择客户
+  function selectCustomerById(customerId) {
+    const dlg = document.getElementById('_dialogOverlay');
+    if (dlg) dlg.remove();
+    // 切换到客户
+    selectedCustomerId = customerId;
+    showPage('chat');
+    loadMessages(customerId);
+    // 高亮sidebar中的客户项
+    document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+    const item = document.querySelector('.sidebar-item[data-cid="' + customerId + '"]');
+    if (item) item.classList.add('active');
+  }
+function closeAddModelForm() {
+  closeModal('addModelModal');
+}
+async function testNewModel() {
+  const apiKey = document.getElementById('newApiKey').value.trim();
+  const baseUrl = document.getElementById('newBaseUrl').value.trim();
+  const model = document.getElementById('newModelId').value.trim();
+  if (!apiKey || !baseUrl || !model) { document.getElementById('testResult').textContent = '❌ 请填全信息'; return; }
+  document.getElementById('testResult').textContent = '⏳ 测试中...';
+  // 收集用途和 API 模式
+  const categories = [];
+  if (document.getElementById('catChat').checked) categories.push('chat');
+  if (document.getElementById('catVision').checked) categories.push('vision');
+  if (document.getElementById('catImageGen').checked) categories.push('imagegen');
+  if (document.getElementById('catEmbedding').checked) categories.push('embedding');
+  const apiMode = document.getElementById('newApiMode').value;
+  try {
+    const r = await api('POST', '/api/models/test', { api_key: apiKey, base_url: baseUrl, model, categories, api_mode: apiMode });
+    document.getElementById('testResult').textContent = r.status === 'ok' ? '✅ '+r.message : '❌ '+r.message;
+  } catch(e) { document.getElementById('testResult').textContent = '❌ 测试失败'; }
+}
+async function saveNewModel() {
+  const apiKey = document.getElementById('newApiKey').value.trim();
+  const baseUrl = document.getElementById('newBaseUrl').value.trim();
+  const model = document.getElementById('newModelId').value.trim();
+  const provider = document.getElementById('newProvider').value.trim() || 'custom';
+  if (!apiKey || !baseUrl || !model) { showToast('请填写完整信息'); return; }
+  // 收集选中的用途
+  const categories = [];
+  if (document.getElementById('catChat').checked) categories.push('chat');
+  if (document.getElementById('catVision').checked) categories.push('vision');
+  if (document.getElementById('catImageGen').checked) categories.push('imagegen');
+  if (document.getElementById('catEmbedding').checked) categories.push('embedding');
+  if (categories.length === 0) { showToast('请至少选择一种模型用途'); return; }
+  // 收集 api_mode（仅向量模型需要）
+  const body = { provider, api_key: apiKey, model, base_url: baseUrl, categories };
+  if (document.getElementById('catEmbedding').checked) {
+    body.api_mode = document.getElementById('newApiMode').value;
+  }
+  try {
+    await api('POST', '/api/models', body);
+    showToast('模型已添加');
+    await loadModelInfo();
+    closeAddModelForm();
+  } catch(e) { showToast('保存失败: '+e.message); }
+  }
+
+  // ===== 模型配置 tab =====
+let _modelList = [];
+let _defaultIds = { chat: '', vision: '', imagegen: '', embedding: '' };
+
+async function loadModelConfigTab() {
+  try {
+    const r = await api('GET', '/api/models');
+    _modelList = r.models || [];
+    _defaultIds = r.default_ids || { chat: '', vision: '', imagegen: '', embedding: '' };
+    // 判断模型分类（优先 categories 字段）
+        function getCat(m) {
+          const cats = m.categories;
+          if (cats && cats.length > 0) {
+            if (cats.includes('vision')) return 'vision';
+            if (cats.includes('imagegen')) return 'imagegen';
+            if (cats.includes('embedding')) return 'embedding';
+            if (cats.includes('chat')) return 'chat';
+          }
+          if (m.id === _defaultIds.vision) return 'vision';
+          if (m.id === _defaultIds.imagegen) return 'imagegen';
+          if (m.id === _defaultIds.embedding) return 'embedding';
+          const n = (m.model || '').toLowerCase(), id = (m.id || '').toLowerCase();
+          if (n.includes('embedding') || id.includes('embedding')) return 'embedding';
+          if (n.includes('v-flash') || n.includes('4v') || n.includes('vision') || n.includes('omni-turbo')) return 'vision';
+          if (n.includes('cogview') || n.includes('image') || id.includes('image_gen') || id.includes('imagegen')) return 'imagegen';
+          return 'chat';
+        }
+    const selects = [
+      { id: 'selChatModel', type: 'chat' },
+      { id: 'selImageGenModel', type: 'imagegen' },
+      { id: 'selVisionModel', type: 'vision' },
+      { id: 'selEmbeddingModel', type: 'embedding' }
+    ];
+    for (const s of selects) {
+      const sel = document.getElementById(s.id);
+      if (!sel) continue;
+      const currentId = _defaultIds[s.type] || '';
+      const filtered = _modelList.filter(m => getCat(m) === s.type);
+      sel.innerHTML = filtered.map(m => {
+        const label = m.model + (m.provider ? ' · ' + m.provider : '');
+        return '<option value="' + m.id + '"' + (m.id === currentId ? ' selected' : '') + '>' + escapeHtml(label) + '</option>';
+      }).join('');
+    }
+    const infoMap = [
+      { type: 'chat', id: 'chatModelInfo' },
+      { type: 'imagegen', id: 'imagegenModelInfo' },
+      { type: 'vision', id: 'visionModelInfo' },
+      { type: 'embedding', id: 'embeddingModelInfo' }
+    ];
+    for (const info of infoMap) {
+      const el = document.getElementById(info.id);
+      if (!el) continue;
+      const currentId = _defaultIds[info.type] || '';
+      const model = _modelList.find(m => m.id === currentId);
+      if (model) {
+        const base = model.base_url.replace(/^https?:\/\//, '').slice(0, 40);
+        el.textContent = '提供商: ' + model.provider + '  ·  端点: ' + base;
+      } else {
+        el.textContent = '未配置';
+      }
+    }
+    document.getElementById('modelConfigStatus').textContent = '';
+  } catch(e) {
+    document.getElementById('modelConfigStatus').textContent = '❌ 加载失败: ' + e.message;
+  }
+}
+
+async function onChangeModelType(type) {
+  const selectMap = { chat: 'selChatModel', imagegen: 'selImageGenModel', vision: 'selVisionModel', embedding: 'selEmbeddingModel' };
+  const suffixMap = { chat: '/default', imagegen: '/image-gen-default', vision: '/vision-default', embedding: '/embedding-default' };
+  const infoMap = { chat: 'chatModelInfo', imagegen: 'imagegenModelInfo', vision: 'visionModelInfo', embedding: 'embeddingModelInfo' };
+  const labelMap = { chat: '话术', imagegen: '图片生成', vision: '图片识别', embedding: '向量' };
+  const sel = document.getElementById(selectMap[type]);
+  if (!sel) return;
+  const modelId = sel.value;
+  if (!modelId) return;
+  try {
+    await api('PUT', '/api/models/' + modelId + suffixMap[type]);
+    _defaultIds[type] = modelId;
+    const infoEl = document.getElementById(infoMap[type]);
+    if (infoEl) {
+      const model = _modelList.find(m => m.id === modelId);
+      if (model) {
+        const base = model.base_url.replace(/^https?:\/\//, '').slice(0, 40);
+        infoEl.textContent = '提供商: ' + model.provider + '  ·  端点: ' + base;
+      }
+    }
+    document.getElementById('modelConfigStatus').textContent = '✅ 已更新' + labelMap[type] + '模型';
+    setTimeout(() => { const s = document.getElementById('modelConfigStatus'); if(s) s.textContent = ''; }, 3000);
+  } catch(e) {
+    document.getElementById('modelConfigStatus').textContent = '❌ 设置失败: ' + e.message;
+  }
+}
+
+  async function refreshModelStatus() {
+    const statusEl = document.getElementById('modelConfigStatus');
+    statusEl.textContent = '⏳ 检测中...';
+    const typeMap = { chat: 'statusChat', imagegen: 'statusImagegen', vision: 'statusVision', embedding: 'statusEmbedding' };
+    const suffixMap = { chat: 'chat', imagegen: 'imagegen', vision: 'vision', embedding: 'embedding' };
+    let allOk = true;
+    for (const [type, statusId] of Object.entries(typeMap)) {
+      const el = document.getElementById(statusId);
+      el.textContent = '⏳';
+      const modelId = _defaultIds[suffixMap[type]] || '';
+      const model = _modelList.find(m => m.id === modelId);
+      if (!model) { el.textContent = '❌ 未配置'; allOk = false; continue; }
+      try {
+        const r = await api('POST', '/api/models/test', {
+          model: model.model,
+          base_url: model.base_url,
+          categories: model.categories || [],
+          api_mode: model.api_mode || 'openai',
+          model_id: model.id
+        });
+        el.textContent = r.status === 'ok' ? '✅' : '❌';
+        if (r.status !== 'ok') allOk = false;
+      } catch(e) { el.textContent = '❌'; allOk = false; }
+    }
+    statusEl.textContent = allOk ? '✅ 全部正常' : '⚠️ 部分异常';
+    setTimeout(() => { statusEl.textContent = ''; }, 5000);
+  }
+
+  // 进入设置页时加载模型配置（由按钮onclick触发）
+    // ===== 知识库 =====
+async function loadKnowledge() {
+  try {
+    const r = await api('GET', '/api/knowledge/documents');
+    const list = document.getElementById('kbList');
+    const docs = r.documents || [];
+    if (!docs.length) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary)">暂无文档，点击上方上传</div>';
+      document.getElementById('kbDetail').innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个文档查看详情</div>';
+      return;
+    }
+    // 按时间降序排列
+    docs.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    list.innerHTML = docs.map(d => {
+      const active = _selectedDocId === d.id ? ' active' : '';
+      return '<div class="kb-list-item' + active + '" data-id="' + d.id + '" onclick="viewKnowledgeDoc(\'' + d.id + '\')">' +
+        '<div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escapeHtml(d.filename) + '</div>' +
+        '<div style="font-size:11px;color:var(--text-secondary);margin-top:2px">' + (d.created_at || '').slice(0,16) + ' · ' + (d.chunks || 0) + ' 片段</div>' +
+        '</div>';
+    }).join('');
+    // 如果有选中的文档，刷新详情
+    if (_selectedDocId) viewKnowledgeDoc(_selectedDocId);
+  } catch(e) { showToast('加载知识库失败'); }
+}
+
+async function viewKnowledgeDoc(docId) {
+  _selectedDocId = docId;
+  // 高亮列表项
+  document.querySelectorAll('.kb-list-item').forEach(el => el.classList.remove('active'));
+  const item = document.querySelector('.kb-list-item[data-id="' + docId + '"]');
+  if (item) item.classList.add('active');
+
+  const detail = document.getElementById('kbDetail');
+  detail.innerHTML = '<div style="text-align:center;color:var(--text-secondary);padding:40px">⏳ 加载中...</div>';
+
+  try {
+    const [docResp, chunksResp] = await Promise.all([
+      api('GET', '/api/knowledge/documents'),
+      api('GET', '/api/knowledge/documents/' + docId + '/chunks')
+    ]);
+    const doc = (docResp.documents || []).find(d => d.id === docId);
+    if (!doc) { detail.innerHTML = '<div style="padding:20px;color:var(--text-secondary)">文档不存在</div>'; return; }
+
+    const chunks = chunksResp.chunks || [];
+    const totalChunks = chunksResp.total_chunks || 0;
+    // 简单关键词提取：取高频词（3-10字）
+    const content = '待提取';
+    const statusLabel = totalChunks > 0 ? '✅ 已索引' : '⏳ 未索引';
+    const statusColor = totalChunks > 0 ? '#2e7d32' : '#f57c00';
+
+    let html = '<div style="max-width:700px">';
+    html += '<h3 style="margin:0 0 4px;font-size:16px">' + escapeHtml(doc.filename) + '</h3>';
+    html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:16px">上传时间: ' + (doc.created_at || '').slice(0,16) + '</div>';
+
+    // 状态信息行
+    html += '<div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px">';
+    html += '<div style="background:var(--bg);border-radius:6px;padding:8px 12px;font-size:12px"><span style="color:' + statusColor + ';font-weight:600">' + statusLabel + '</span></div>';
+    html += '<div style="background:var(--bg);border-radius:6px;padding:8px 12px;font-size:12px">📦 ' + totalChunks + ' 个片段</div>';
+    if (chunks.length > 0 && chunks[0].vector_dim) {
+      html += '<div style="background:var(--bg);border-radius:6px;padding:8px 12px;font-size:12px">📐 向量维度: ' + chunks[0].vector_dim + '</div>';
+    }
+    html += '</div>';
+
+    // 操作按钮
+    html += '<div style="display:flex;gap:6px;margin-bottom:20px">';
+    html += '<button class="btn btn-sm btn-outline" onclick="window.open(\'/api/knowledge/documents/' + docId + '/file\')">📄 查看源文件</button>';
+    html += '<button class="btn btn-sm btn-outline" onclick="reindexKnowledge()">🔄 重新索引</button>';
+    html += '<button class="btn btn-sm btn-danger" onclick="deleteKnowledgeDoc(\'' + docId + '\')">🗑️ 删除</button>';
+    html += '</div>';
+
+    // 片段列表
+    if (chunks.length > 0) {
+      html += '<h4 style="margin:0 0 8px;font-size:14px">📝 片段详情</h4>';
+      html += '<div style="display:flex;flex-direction:column;gap:6px">';
+      for (const ch of chunks) {
+        html += '<div style="background:var(--bg);border-radius:6px;padding:8px 12px;font-size:12px;line-height:1.5">';
+        html += '<div style="font-weight:500;margin-bottom:4px">#' + (ch.id || '').split('_').pop() + '</div>';
+        html += '<div style="color:var(--text-secondary);font-family:monospace;font-size:11px;word-break:break-all">向量: ' + (ch.vector_preview || '无') + '</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div style="color:var(--text-secondary);font-size:12px;padding:12px 0">该文档尚未索引，点击「重建索引」生成向量</div>';
+    }
+    html += '</div>';
+    detail.innerHTML = html;
+  } catch(e) {
+    detail.innerHTML = '<div style="color:var(--text-secondary);padding:20px">加载失败: ' + e.message + '</div>';
+  }
+}
+function uploadKnowledge() { document.getElementById('kbFileInput').click(); }
+async function handleUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+      await fetch('/api/knowledge/upload', { method: 'POST', body: form });
+      showToast('上传成功，正在建立索引...');
+      // 自动触发重建索引
+      await api('POST', '/api/knowledge/reindex');
+      showToast('✅ 索引完成');
+      await loadKnowledge();
+    } catch(e) { showToast('上传失败: '+e.message); }
+  e.target.value = '';
+}
+async function reindexKnowledge() {
+  try {
+    await api('POST', '/api/knowledge/reindex');
+    showToast('重建索引成功');
+    await loadKnowledge();
+  } catch(e) { showToast('重建失败: '+e.message); }
+}
+async function deleteKnowledgeDoc(id) {
+  if (!(await showConfirm('确定删除此文档？'))) return;
+  try {
+    await api('DELETE', `/api/knowledge/documents/${id}`);
+    showToast('已删除');
+    await loadKnowledge();
+  } catch(e) { showToast('删除失败'); }
+}
+function viewKnowledgeDoc(id) {
+  // 简单的查看内容
+}
+
+// ===== 设置 =====
+async function loadPrompt() {
+  try {
+    const r = await api('GET', '/api/prompt');
+    document.getElementById('cfgPrompt').value = r.prompt || '';
+  } catch(e) { showToast('加载提示词失败'); }
+  // 同时加载其他提示词
+  loadAllPrompts();
+}
+async function savePrompt() {
+  const prompt = document.getElementById('cfgPrompt').value;
+  if (!prompt) { showToast('提示词不能为空'); return; }
+  try {
+    await api('PUT', '/api/prompt', { prompt });
+    showToast('提示词已保存');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+// 提示词管理 tab 切换
+function switchSettingsTab(tabId) {
+  document.querySelectorAll('#settingsSidebar .settings-nav-item').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-tab') === tabId);
+  });
+  document.querySelectorAll('#pageSettings .settings-tab-content').forEach(function(el) {
+    el.style.display = 'none';
+  });
+  var target = document.getElementById(tabId);
+  if (target) target.style.display = 'block';
+
+}
+// 加载所有提示词（图片生成、图片识别）
+async function loadAllPrompts() {
+  try {
+    const r = await api('GET', '/api/settings/prompts');
+    const p = r.prompts || {};
+    if (document.getElementById('cfgImageGenPrompt')) {
+      document.getElementById('cfgImageGenPrompt').value = p.image_generation || '';
+    }
+    if (document.getElementById('cfgImageRecPrompt')) {
+      document.getElementById('cfgImageRecPrompt').value = p.image_recognition_chat || '';
+    }
+    if (document.getElementById('cfgImageRecIndexPrompt')) {
+      document.getElementById('cfgImageRecIndexPrompt').value = p.image_recognition_index || '';
+    }
+  } catch(e) { /* 静默 */ }
+}
+// 保存指定提示词
+async function savePromptByName(name) {
+  const map = {
+    'image_generation': 'cfgImageGenPrompt',
+    'image_recognition_chat': 'cfgImageRecPrompt',
+    'image_recognition_index': 'cfgImageRecIndexPrompt'
+  };
+  const el = document.getElementById(map[name]);
+  if (!el) { showToast('未找到输入框'); return; }
+  const content = el.value;
+  if (!content) { showToast('提示词不能为空'); return; }
+  try {
+    await api('POST', '/api/settings/prompts', { name, content });
+    showToast('✅ 提示词已保存');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+// 重建图片向量索引 - 后台运行+轮询进度
+async function reindexImageVectors() {
+  const status = document.getElementById('reindexStatus');
+  status.textContent = '⏳ 正在启动重建...';
+  try {
+    const r = await api('POST', '/api/image-index/reindex');
+    if (r.status === 'ok') {
+      status.textContent = '⏳ 向量索引正在重建（约5-15分钟），请稍候...';
+      showToast('⏳ 重建已启动，后台运行中');
+      const poll = setInterval(async () => {
+        try {
+          const pr = await api('GET', '/api/image-index/reindex/progress');
+          if (pr.data && pr.data.error) {
+            status.textContent = '❌ ' + pr.data.error;
+            clearInterval(poll);
+          } else if (pr.data && !pr.data.running) {
+            status.textContent = '✅ ' + (pr.data.message || '重建完成');
+            clearInterval(poll);
+          } else if (pr.data) {
+            status.textContent = '⏳ 重建中: ' + (pr.data.message || '请稍候...');
+          }
+        } catch(e) {}
+      }, 5000);
+    } else {
+      status.textContent = '❌ ' + (r.message || '未知错误');
+      showToast('❌ 重建失败: ' + (r.message || '未知错误'));
+    }
+  } catch(e) {
+    status.textContent = '❌ ' + e.message;
+    showToast('❌ 重建失败: ' + e.message);
+  }
+}
+async function loadSettings() {
+  try {
+    const r = await api('GET', '/api/settings');
+    document.getElementById('cfgBannedWords').value = r.banned_words || '';
+  } catch(e) { /* 静默 */ }
+}
+async function saveBannedWords() {
+  try {
+    const settings = await api('GET', '/api/settings');
+    settings.banned_words = document.getElementById('cfgBannedWords').value;
+    await api('PUT', '/api/settings', settings);
+    showToast('违禁词已保存');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+
+// ===== 客户编辑 =====
+function showAddCustomer() {
+  document.getElementById('customerDialogTitle').textContent = '新建客户';
+  document.getElementById('editCustomerId').value = '';
+  document.getElementById('smartParseInput').value = '';
+  document.getElementById('dlgName').value = '';
+  document.getElementById('dlgTitle').value = '';
+  document.getElementById('dlgAge').value = '';
+  document.getElementById('dlgHeight').value = '';
+  document.getElementById('dlgWeight').value = '';
+  document.getElementById('dlgTargetWeight').value = '';
+  document.getElementById('dlgPurchase').value = '';
+  document.getElementById('dlgCustomerType').value = 'cid';
+  document.getElementById('dlgRemark').value = '';
+  showModal('customerDialog');
+}
+function autoCalcCustomerType() {
+  const purchase = document.getElementById('dlgPurchase').value.trim();
+  const sel = document.getElementById('dlgCustomerType');
+  if (!purchase) {
+    sel.value = 'cid';
+    return;
+  }
+  // 计算总金额
+  const total = purchase.split('+').reduce(function(sum, p) {
+    const v = parseFloat(p.trim());
+    return sum + (isNaN(v) ? 0 : v);
+  }, 0);
+  sel.value = total >= 2970 ? 'package' : 'treatment';
+}
+function autoParse() {}
+async function parseCustomerText() {
+  const text = document.getElementById('smartParseInput').value.trim();
+  if (!text) return;
+  try {
+    const r = await api('POST', '/api/customers/parse', { text });
+    const p = r.parsed || {};
+    if (p.name) document.getElementById('dlgName').value = p.name;
+    if (p.title) document.getElementById('dlgTitle').value = p.title;
+    if (p.age) document.getElementById('dlgAge').value = p.age;
+    if (p.height) document.getElementById('dlgHeight').value = p.height;
+    if (p.weight) document.getElementById('dlgWeight').value = p.weight;
+    if (p.target_weight || p.ideal_weight) document.getElementById('dlgTargetWeight').value = p.target_weight || p.ideal_weight || '';
+  } catch(e) { showToast('识别失败'); }
+}
+async function saveCustomer() {
+  const name = document.getElementById('dlgName').value.trim();
+  if (!name) { showToast('姓名不能为空'); return; }
+  const id = document.getElementById('editCustomerId').value;
+  const data = {
+    name, title: document.getElementById('dlgTitle').value.trim(),
+    age: document.getElementById('dlgAge').value.trim(),
+    height: document.getElementById('dlgHeight').value.trim(),
+    weight: document.getElementById('dlgWeight').value.trim(),
+    target_weight: document.getElementById('dlgTargetWeight').value.trim(),
+    purchase: document.getElementById('dlgPurchase').value.trim(),
+    customer_type: document.getElementById('dlgCustomerType').value,
+    remark: document.getElementById('dlgRemark').value.trim()
+  };
+  try {
+    if (id) { await api('PUT', `/api/customers/${id}`, data); }
+    else { await api('POST', '/api/customers', data); }
+    closeModal('customerDialog');
+    await loadCustomers(document.getElementById('customerSearch').value);
+    showToast('保存成功');
+  } catch(e) { showToast('保存失败: '+e.message); }
+}
+
+// ===== 工具 =====
+function autoResize(el) {
+  el.style.height = 'auto';
+  const maxH = window.innerHeight * 0.5;
+  el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+}
+
+// ===== contenteditable 工具函数 =====
+function getInputText() {
+  const el = document.getElementById('msgInput');
+  return el ? el.textContent.trim() : '';
+}
+
+function moveCursorToEnd(el) {
+  if (!el) return;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  range.collapse(false);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+function getTagsFromInput() {
+  const el = document.getElementById('msgInput');
+  if (!el) return [];
+  const text = el.textContent;
+  const regex = /#([一-鿿\w]+)/g;
+  const tags = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    tags.push(match[1]);
+  }
+  return tags;
+}
+
+function insertTagAtEnd(tagName) {
+  const el = document.getElementById('msgInput');
+  if (!el) return;
+  
+  const existingTags = getTagsFromInput();
+  const hasExistingTags = existingTags.length > 0;
+  
+  const tagSpan = document.createElement('span');
+  tagSpan.className = 'input-tag';
+  tagSpan.textContent = '#' + tagName + ' ';
+  
+  if (hasExistingTags) {
+    el.appendChild(document.createTextNode(' '));
+  } else {
+    el.appendChild(document.createTextNode('\n\n'));
+  }
+  
+  el.appendChild(tagSpan);
+  moveCursorToEnd(el);
+  autoResize(el);
+}
+
+function isCursorInTag() {
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return false;
+  const range = sel.getRangeAt(0);
+  let node = range.startContainer;
+  while (node && node !== document.getElementById('msgInput')) {
+    if (node.nodeType === Node.ELEMENT_NODE && node.classList && node.classList.contains('input-tag')) {
+      return node;
+    }
+    node = node.parentNode;
+  }
+  return false;
+}
+
+// ===== 搜索客户 =====
+document.getElementById('customerSearch').addEventListener('input', function() {
+  loadCustomers(this.value);
+});
+
+// ===== 顶部按钮 =====
+document.getElementById('btnKnowledge').addEventListener('click', function() {
+  if (this.classList.contains('active')) { showPage('chat'); return; }
+  showPage('knowledge');
+  loadKnowledge();
+});
+document.getElementById('btnSettings').addEventListener('click', function() {
+  if (this.classList.contains('active')) { showPage('chat'); return; }
+  showPage('settings');
+  loadPrompt();
+  loadSettings();
+  loadTags();
+});
+document.getElementById('chatContainer').addEventListener('click', () => { showPage('chat'); });
+
+// Ctrl+Enter 发送
+document.getElementById('msgInput').addEventListener('keydown', function(e) {
+  // Ctrl+Enter 发送
+  if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendMessage(); return; }
+  // 退格/Delete 删除标签时整个删除
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    const tagSpan = isCursorInTag();
+    if (tagSpan) {
+      e.preventDefault();
+      tagSpan.remove();
+      moveCursorToEnd(this);
+      autoResize(this);
+      return;
+    }
+  }
+});
+
+// 粘贴图片上传
+document.getElementById('msgInput').addEventListener('paste', async function(e) {
+  const items = e.clipboardData && e.clipboardData.items;
+  if (!items || items.length === 0) return;
+  const hasImage = Array.from(items).some(item => item.type && item.type.startsWith('image/'));
+  if (hasImage) {
+    e.preventDefault();
+    await uploadImageFromClipboard(items);
+    return;
+  }
+  // 如果有纯文本，在光标位置插入
+  const plain = e.clipboardData.getData('text/plain');
+  if (plain) {
+    e.preventDefault();
+    const el = document.getElementById('msgInput');
+    el.focus();
+    document.execCommand('insertText', false, plain);
+    autoResize(el);
+  }
+});
+
+// ===== 智能[图片]描述填充 =====
+// 图片识别完成后，自动在输入框中填充描述
+function autoFillImageDescriptions() {
+  if (!recentlyUploadedImageInfos.length) return;
+  const el = document.getElementById('msgInput');
+  const tags = getTagsFromInput();
+  const text = el.textContent;
+  
+  // 找输入框中所有未填充描述的 [图片] 标记
+  const matches = [...text.matchAll(/\[图片\]/g)];
+  const unfilled = [];
+  for (const m of matches) {
+    const after = text.substring(m.index + 4);
+    if (!after.startsWith('(')) {
+      unfilled.push(m.index);
+    }
+  }
+  
+  if (unfilled.length > 0) {
+    // 有[图片]标记：按顺序填充描述
+    let newText = text;
+    let offset = 0;
+    for (let i = 0; i < unfilled.length && i < recentlyUploadedImageInfos.length; i++) {
+      const desc = recentlyUploadedImageInfos[i].description || '';
+      const insert = '(' + desc + ')';
+      const pos = unfilled[i] + 4 + offset;
+      newText = newText.substring(0, pos) + insert + newText.substring(pos);
+      offset += insert.length;
+    }
+    // 重新设置内容并恢复标签
+    el.textContent = newText;
+    // 恢复标签
+    tags.forEach(tagName => {
+      const tagSpan = document.createElement('span');
+      tagSpan.className = 'input-tag';
+      tagSpan.textContent = '#' + tagName + ' ';
+      el.appendChild(tagSpan);
+    });
+    moveCursorToEnd(el);
+    autoResize(el);
+    return;
+  }
+  
+  // 没有[图片]标记但有描述：直接追加到输入框
+  if (text) {
+    let appendText = '';
+    for (const info of recentlyUploadedImageInfos) {
+      const desc = info.description || '';
+      appendText += '[图片](' + desc + ')\n';
+    }
+    el.textContent = text + appendText;
+    // 恢复标签
+    tags.forEach(tagName => {
+      const tagSpan = document.createElement('span');
+      tagSpan.className = 'input-tag';
+      tagSpan.textContent = '#' + tagName + ' ';
+      el.appendChild(tagSpan);
+    });
+    moveCursorToEnd(el);
+    autoResize(el);
+  }
+}
+
+// 当用户输入[图片]时立即触发填充
+let _lastInputLen = 0;
+document.getElementById('msgInput').addEventListener('input', function(e) {
+  const val = e.target.textContent || '';
+  autoResize(e.target);
+  if (val.length >= _lastInputLen + 4 && val.endsWith('[图片]')) {
+    autoFillImageDescriptions();
+  } else if (val.length > _lastInputLen && val.includes('[图片]') && !val.includes('[图片](')) {
+    autoFillImageDescriptions();
+  }
+  _lastInputLen = val.length;
+});
+
+// ===== 初始化 =====
+async function init() {
+  if (typeof lucide !== "undefined") lucide.createIcons();
+  showPage('chat');
+  // 1. 健康检查
+  try {
+    const health = await api('GET', '/api/health');
+    if (health.status !== 'ok') {
+      showToast('⚠️ 后端服务异常: ' + JSON.stringify(health));
+    }
+  } catch(e) {
+    showToast('❌ 无法连接后端服务，请确认服务已启动');
+  }
+  
+  // 2. 检查模型配置
+  try {
+    const cfg = await api('GET', '/api/config');
+    if (!cfg.api_key || cfg.api_key === '你的API_KEY') {
+      showAlert('请先在设置页面配置 API KEY 和模型信息，否则无法正常使用', '⚠️ API 未配置');
+    } else if (cfg.api_key.length < 8) {
+      showToast('⚠️ API KEY 格式似乎不正确，请在设置中检查');
+    }
+  } catch(e) { /* 静默 */ }
+  
+  await loadModelInfo();
+  await loadCustomers();
+  await loadTags();
+  // 检查搜索模式
+  try {
+    const sr = await api('GET', '/api/search/status');
+    if (!sr.embedding_available) {
+      showToast('?? 向量搜索服务暂不可用，已降级为关键词搜索模式');
+    } else if (sr.degraded_reason) {
+      showToast('?? ' + sr.degraded_reason);
+    }
+  } catch(e) { /* 静默 */ }
+}
+init();
+// ===== 标签管理 =====
+let allTags = [];
+
+async function loadTags() {
+  try {
+    const r = await api('GET', '/api/tags');
+    allTags = r.tags || [];
+    renderSettingsTags();
+    renderTagChips();
+  } catch(e) {}
+}
+
+function renderSettingsTags() {
+  const el = document.getElementById('settingsTagsList');
+  if (!el) return;
+  if (!allTags.length) {
+    el.innerHTML = '<span style="font-size:12px;color:#999">暂无标签，在下方添加</span>';
+    return;
+  }
+  el.innerHTML = allTags.map(t => `
+    <span style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:#f0f0f0;border-radius:16px;font-size:13px">
+      <span>${escapeHtml(t.name)}</span>
+      <button style="background:none;border:none;color:#e53935;cursor:pointer;font-size:14px;padding:0 2px;font-weight:700" onclick="deleteTag('${t.id}')" title="删除">✕</button>
+    </span>
+  `).join('');
+}
+
+async function addTag() {
+  const input = document.getElementById('newTagName');
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    await api('POST', '/api/tags', { tag: name });
+    input.value = '';
+    await loadTags();
+    showToast('标签已添加');
+  } catch(e) { showToast(e.message || '添加失败'); }
+}
+
+async function deleteTag(tagId) {
+  const ok = await showConfirm('删除此标签？', '删除标签');
+  if (!ok) return;
+  try {
+    await api('DELETE', `/api/tags/${tagId}`);
+    await loadTags();
+  } catch(e) { showToast('删除失败'); }
+}
+
+async function editTag(tagId, oldName) {
+  const newName = await showPrompt('修改标签名称：', oldName);
+  if (!newName || !newName.trim()) return;
+  try {
+    await api('PUT', `/api/tags/${tagId}`, { name: newName.trim() });
+    showToast('已修改');
+    await loadTags();
+  } catch(e) { showToast('修改失败'); }
+}
+
+function renderTagChips() {
+  const el = document.getElementById('tagChips');
+  if (!el) return;
+  if (!allTags.length) {
+    el.innerHTML = '';
+    return;
+  }
+  // 如果有选中的，保持状态
+  const activeIds = new Set(
+    Array.from(el.querySelectorAll('.tag-chip.active')).map(c => c.dataset.id)
+  );
+  el.innerHTML = allTags.map(t => {
+    return `<span class="tag-chip" data-id="${t.id}" data-tag="${escapeHtml(t.name)}">${escapeHtml(t.name)}</span>`;
+  }).join('');
+}
+
+
+
+// 点击标签时，插入蓝色#标签名到输入框末尾
+document.addEventListener('click', function(e) {
+  if (e.target.classList.contains('tag-chip')) {
+    e.stopPropagation();
+    const tagName = e.target.textContent;
+    insertTagAtEnd(tagName);
+    document.getElementById('msgInput').focus();
+  }
+});
+
+// ===== 导入导出 =====
+async function exportAllData() {
+  try {
+    const r = await api('GET', '/api/export');
+    const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `小赛助手_数据导出_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('导出成功');
+  } catch(e) { showToast('导出失败: '+e.message); }
+}
+
+async function importAllData(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  if (!(await showConfirm('导入数据将覆盖现有数据，确定继续？'))) {
+    event.target.value = '';
+    return;
+  }
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    
+    // 批量导入客户
+    if (data.customers) {
+      for (const c of data.customers) {
+        await api('POST', '/api/customers', {
+          name: c.name,
+          phone: c.phone,
+          height: c.height,
+          weight: c.weight,
+          age: c.age,
+          birthday: c.birthday,
+          customer_type: c.customer_type,
+          purchase_records: c.purchase_records,
+          notes: c.notes,
+          weight_goal: c.weight_goal,
+          ideal_weight: c.ideal_weight,
+          bmi: c.bmi,
+        });
+      }
+    }
+    
+    // 导入消息
+    if (data.messages) {
+      for (const m of data.messages) {
+        await api('POST', `/api/customers/${m.customer_id}/messages`, {
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp,
+          session_id: m.session_id,
+        });
+      }
+    }
+    
+    // 导入系统提示词
+    if (data.system_prompt) {
+      await api('PUT', '/api/prompt', { prompt: data.system_prompt });
+    }
+    
+    // 导入违禁词
+    if (data.banned_words) {
+      await api('PUT', '/api/settings', { ...data.settings, banned_words: data.banned_words });
+    }
+    
+    // 导入标签
+    if (data.tags) {
+      for (const t of data.tags) {
+        try { await api('POST', '/api/tags', { tag: t.name }); } catch(e) {}
+      }
+    }
+    
+    showToast('导入成功，请刷新页面');
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) { showToast('导入失败: '+e.message); }
+  event.target.value = '';
+}
+
+
+// ===== 图片索引 =====
+
+
+async function imageIndexLoadStatus() {
+  try {
+    const r = await api('GET', '/api/image-index/status');
+    const d = r.data;
+    document.getElementById('imageIndexStatus').textContent = 
+      `已索引 ${d.done} 张 | 待识别 ${d.pending} 张 | 失败 ${d.failed} 张`;
+  } catch(e) {
+    document.getElementById('imageIndexStatus').textContent = '获取状态失败';
+  }
+}
+
+async function imageIndexSelectFolder() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.webkitdirectory = true;
+  input.multiple = true;
+  input.onchange = async () => {
+      const files = Array.from(input.files || []);
+      if (!files.length) return;
+      // 判断图片是直接放在选中文件夹里，还是在子文件夹中
+      const hasSubfolders = files.some(f => (f.webkitRelativePath || '').indexOf('/') !== -1);
+      if (hasSubfolders) {
+        // 情况1：选中的文件夹里有子文件夹 → 子文件夹名作为分类名
+        const folders = {};
+        for (const f of files) {
+          const rel = f.webkitRelativePath || f.name;
+          const top = rel.split('/')[0];
+          if (!top) continue;
+          if (!folders[top]) folders[top] = [];
+          folders[top].push(f);
+        }
+        const folderNames = Object.keys(folders);
+        if (!folderNames.length) { showToast('❌ 未选择有效文件夹'); return; }
+        let pathHint = 'C:\\Users\\zhang\\Desktop\\' + folderNames[0];
+        const folderPath = await showPrompt('请输入文件夹的完整路径：\n（子文件夹名将自动作为子分类）', pathHint, '选择文件夹');
+        if (!folderPath || !folderPath.trim()) { showToast('❌ 已取消'); return; }
+        const basePath = folderPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+        showToast('⏳ 正在处理 ' + folderNames.length + ' 个文件夹...');
+        try {
+          let totalNew = 0;
+          for (const name of folderNames) {
+            const fullPath = basePath + '/' + name;
+            const r = await api('POST', '/api/image-index/scan-incremental', { path: fullPath, category_name: name });
+            if (r.status === 'ok') {
+              const d = r.data || {};
+              totalNew += d.new_count || 0;
+              if (d.new_count > 0) {
+                showToast('📥 分类 "' + name + '": 新增 ' + d.new_count + ' 张, 跳过 ' + (d.skipped||0) + ' 张已有');
+              } else {
+                showToast('⏭️ 分类 "' + name + '": 无新图片（跳过 ' + (d.skipped||0) + ' 张已有）');
+              }
+            } else {
+              showToast('⚠️ 文件夹 ' + name + ' 处理异常: ' + (r.message || ''));
+            }
+          }
+          if (totalNew > 0) {
+            showToast('✅ 新增 ' + totalNew + ' 张图片，自动识别中...');
+          } else {
+            showToast('✅ 处理完成，无新增图片');
+          }
+          await imageIndexLoadStatus();
+          await imageIndexRenderGrid();
+        } catch(e) {
+          showToast('❌ 处理失败: ' + e.message);
+        }
+      } else {
+        // 情况2：图片直接在选中文件夹里 → 以文件夹名作为分类名
+        let pathHint = 'C:\\Users\\zhang\\Desktop\\' + (files[0].webkitRelativePath || files[0].name);
+        const folderPath = await showPrompt('请输入文件夹的完整路径：\n（将以此文件夹名创建子分类）', pathHint.replace(/\/[^/]+$/, ''), '选择文件夹');
+        if (!folderPath || !folderPath.trim()) { showToast('❌ 已取消'); return; }
+        const basePath = folderPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+        const catName = basePath.split('/').pop() || '未分类';
+        showToast('⏳ 正在扫描分类 "' + catName + '"...');
+        try {
+          const r = await api('POST', '/api/image-index/scan-incremental', { path: basePath, category_name: catName });
+          if (r.status === 'ok') {
+            const d = r.data || {};
+            if (d.new_count > 0) {
+              showToast('📥 新增 ' + d.new_count + ' 张图片，自动识别中...');
+            } else {
+              showToast('⏭️ 无新图片（跳过 ' + (d.skipped||0) + ' 张已有）');
+            }
+          } else {
+            showToast('⚠️ 处理异常: ' + (r.message || ''));
+          }
+          await imageIndexLoadStatus();
+          await imageIndexRenderGrid();
+        } catch(e) {
+          showToast('❌ 处理失败: ' + e.message);
+        }
+      }
+    };
+  input.click();
+}
+
+
+
+
+
+async function imageIndexRenderGrid() {
+  try {
+    const r = await api('GET', '/api/image-index/status');
+    const d = r.data;
+    const grid = document.getElementById('imageIndexGrid');
+    
+    if (d.done === 0) {
+      grid.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)"><div style="font-size:48px;margin-bottom:16px">📷</div><div>尚未索引任何图片</div><div style="font-size:13px;margin-top:8px">请点击"选择文件夹"开始</div></div>';
+      return;
+    }
+    
+    // 按分类展示
+    let html = '';
+    for (const cat of d.categories) {
+      html += `<div style="padding:8px 12px;background:var(--card-bg);border-radius:8px;margin-bottom:8px"><strong>📂 ${cat.category}</strong> (${cat.count}张)</div>`;
+    }
+    
+    // 分类统计
+    html += `<div style="padding:16px;background:var(--card-bg);border-radius:8px;text-align:center">
+      <div style="font-size:32px;font-weight:700;color:var(--accent)">${d.done}</div>
+      <div style="font-size:13px;color:var(--text-secondary)">已索引图片</div>
+      <div style="font-size:12px;color:var(--text-secondary);margin-top:4px">${d.case_groups} 个案例分组</div>
+    </div>`;
+    
+    grid.innerHTML = html;
+  } catch(e) {
+    showToast('加载失败: ' + e.message);
+  }
+}
+
+
+
+
+// 进入图片索引页面时自动加载
+const _origShowPage = window.showPage;
+window.showPage = function(page) {
+  _origShowPage(page);
+  if (page === 'imageindex') {
+      imageIndexLoadStatus();
+      imageIndexRenderGrid();
+    }
+  };
+
+  // ===== v2 图片索引新功能 =====
+
+    // ---- Subcategory grid rendering ----
+        async function imageIndexRenderGrid() {
+          try {
+            const r = await api('GET', '/api/image-index/subcategories');
+            const subs = Array.isArray(r) ? r : (r.data && r.data.subcategories) || [];
+            const grid = document.getElementById('imageIndexGrid');
+            if (!subs.length) {
+              grid.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)"><div style="font-size:48px;margin-bottom:16px">📂</div><div>尚无子分类</div><div style="font-size:13px;margin-top:8px">请点击"选择文件夹"或"添加子分类"开始</div></div>';
+              return;
+            }
+            let html = '';
+            for (const s of subs) {
+              const name = s.name || '';
+              const count = s.count || 0;
+              const desc = s.description || '';
+              html += '<div class="kb-card" style="cursor:pointer;position:relative;padding:16px" onclick="openSubcategoryDetail(\'' + escapeHtml(name).replace(/'/g,"\\'") + '\')">';
+              html += '<div style="font-size:36px;text-align:center;margin-bottom:8px">📁</div>';
+              html += '<div style="font-weight:600;font-size:14px;text-align:center;margin-bottom:4px">' + escapeHtml(name) + '</div>';
+              html += '<div style="font-size:12px;color:var(--text-secondary);text-align:center">' + count + ' 张图片</div>';
+              if (desc) {
+                html += '<div style="font-size:11px;color:#888;margin-top:6px;padding:4px 8px;background:var(--bg-secondary);border-radius:4px;max-height:36px;overflow:hidden">' + escapeHtml(desc.substring(0,80)) + '</div>';
+              }
+              html += '<div style="display:flex;gap:4px;margin-top:8px;justify-content:center">';
+              html += '<button class="btn btn-outline btn-xs" onclick="event.stopPropagation();showEditSubcategoryDesc(\'' + escapeHtml(name).replace(/'/g,"\\'") + '\',\'' + escapeHtml(desc).replace(/'/g,"\\'") + '\')" style="font-size:11px">✏️ 编辑描述</button>';
+              html += '<button class="btn btn-danger btn-xs" onclick="event.stopPropagation();confirmDeleteSubcategory(\'' + escapeHtml(name).replace(/'/g,"\\'") + '\')" style="font-size:11px">🗑 删除</button>';
+              html += '</div></div>';
+            }
+            grid.innerHTML = html;
+          } catch(e) {
+            document.getElementById('imageIndexGrid').innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + e.message + '</div>';
+          }
+        }
+
+    // ---- Subcategory detail ----
+    let _curSubcatName = '';
+    let _curSubcatPage = 1;
+    let _curSubcatTotal = 0;
+    let _editorImageId = null;
+
+    async function openSubcategoryDetail(name) {
+          _curSubcatName = name;
+          document.getElementById('categoryDetailTitle').textContent = '📂 ' + name;
+          document.getElementById('categoryDetailModal').style.display = 'flex';
+          document.getElementById('subcatSearchInput').value = '';
+          document.getElementById('subcatSortSelect').value = 'created_at';
+          document.getElementById('saveDescBtn').style.display = 'none';
+          // 立即清空旧内容，显示加载中
+          document.getElementById('categoryDescInput').value = '';
+          document.getElementById('subcatImageInfo').textContent = '加载中...';
+          document.getElementById('subcatImageList').innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>';
+          document.getElementById('subcatPagination').innerHTML = '';
+          _loadSubcategoryDesc(name);
+                // 检查缓存，有缓存直接渲染，不用请求
+                if (_subcatImageCache[name]) {
+                  var cache = _subcatImageCache[name];
+                  document.getElementById('subcatImageInfo').textContent = '共 ' + cache.total + ' 张图片';
+                  document.getElementById('subcatImageList').innerHTML = cache.html;
+                  document.getElementById('subcatPagination').innerHTML = cache.paginationHtml || '';
+                  _curSubcatTotal = cache.total;
+                  return;
+                }
+                loadSubcategoryImages(name, 1);
+        }
+
+        let _subcatDescCache = null;
+                    // 子分类图片缓存：{ subcatName: { html, total, paginationHtml } }
+                    let _subcatImageCache = {};
+
+                    function _clearSubcatImageCache(name) {
+                      if (name) {
+                        delete _subcatImageCache[name];
+                      } else {
+                        _subcatImageCache = {};
+                      }
+                    }
+
+                    async function _loadSubcategoryDesc(name) {
+                  try {
+                    // 不缓存描述，每次从服务器读取最新
+                    const r = await api('GET', '/api/image-index/subcategories');
+                    const subs = Array.isArray(r) ? r : (r.data && r.data.subcategories) || [];
+                    const found = subs.find(function(s) { return s.name === name; });
+                    if (found && found.description) {
+                      document.getElementById('categoryDescInput').value = found.description;
+                    }
+                  } catch(e) {}
+                }
+
+        function closeSubcategoryDetail() {
+          document.getElementById('categoryDetailModal').style.display = 'none';
+        }
+
+    async function loadSubcategoryImages(name, page) {
+      if (!page) page = 1;
+      _curSubcatPage = page;
+      _curSubcatName = name;
+      const q = document.getElementById('subcatSearchInput').value.trim();
+      const sort = document.getElementById('subcatSortSelect').value;
+      const order = sort === 'use_count' ? 'desc' : 'desc';
+      const limit = 20;
+      const offset = (page - 1) * limit;
+      const listEl = document.getElementById('subcatImageList');
+      listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>';
+
+      try {
+        let url = '/api/image-index/subcategories/' + encodeURIComponent(name) + '/images?sort=' + sort + '&order=' + order + '&offset=' + offset + '&limit=' + limit;
+        if (q) url += '&q=' + encodeURIComponent(q);
+        const r = await api('GET', url);
+                const images = r.images || (r.data && r.data.images) || [];
+                const total = r.total || (r.data && r.data.total) || 0;
+        _curSubcatTotal = total;
+
+        document.getElementById('subcatImageInfo').textContent = '共 ' + total + ' 张图片';
+        if (!images.length) {
+          listEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)"><div style="font-size:36px;margin-bottom:8px">🖼</div><div>该分类暂无图片</div></div>';
+          renderSubcatPagination(total, limit, page);
+          return;
+        }
+
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+        html += '<thead><tr style="background:var(--bg-secondary);border-bottom:2px solid var(--border)">';
+        html += '<th style="padding:8px 6px;text-align:center;width:32px"><input type="checkbox" id="selectAllCheckbox" onchange="toggleSelectAll(this)"></th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:50px">缩略图</th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:50px">ID</th>';
+        html += '<th style="padding:8px 6px;text-align:left">描述</th>';
+        html += '<th style="padding:8px 6px;text-align:left;width:100px">标签</th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:50px">使用次数</th>';
+        html += '<th style="padding:8px 6px;text-align:center;width:90px">操作</th>';
+        html += '</tr></thead><tbody>';
+
+        for (const img of images) {
+          const tags = Array.isArray(img.tags) ? img.tags.join(', ') : (img.tags || '');
+          const desc = img.description || '';
+          const useCount = img.use_count || 0;
+          html += '<tr style="border-bottom:1px solid var(--border)">';
+          html += '<td style="padding:6px;text-align:center"><input type="checkbox" class="img-checkbox" value="' + img.id + '"></td>';
+          html += '<td style="padding:6px;text-align:center"><img src="/api/image-index/images/' + img.id + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="openImagePreview(\'/api/image-index/images/' + img.id + '\')" onerror="this.outerHTML=\'<div style=\\\'width:40px;height:40px;background:var(--bg-secondary);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px\\\'>🖼</div>\'"></td>';
+          html += '<td style="padding:6px;text-align:center;font-size:11px;color:var(--text-secondary)">' + img.id + '</td>';
+          html += '<td style="padding:6px;word-break:break-word;max-width:220px">' + escapeHtml(desc.substring(0,120)) + (desc.length>120?'...':'') + '</td>';
+          html += '<td style="padding:6px;font-size:11px;color:var(--accent)">' + escapeHtml(tags.substring(0,50)) + '</td>';
+          html += '<td style="padding:6px;text-align:center;font-size:12px">' + useCount + '</td>';
+          html += '<td style="padding:6px;text-align:center;white-space:nowrap">';
+          html += '<button class="btn btn-outline btn-xs" onclick="editImage(' + img.id + ')" style="font-size:10px;padding:2px 6px">✏️</button> ';
+          html += '<button class="btn btn-danger btn-xs" onclick="deleteImage(' + img.id + ')" style="font-size:10px;padding:2px 6px">🗑</button>';
+          html += '</td></tr>';
+        }
+        html += '</tbody></table>';
+        listEl.innerHTML = html;
+                renderSubcatPagination(total, limit, page);
+                // 缓存首页结果（无搜索、默认排序时）
+                var paginationHtml = document.getElementById('subcatPagination').innerHTML;
+                _subcatImageCache[name] = { html: html, total: total, paginationHtml: paginationHtml };
+      } catch(e) {
+        listEl.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + e.message + '</div>';
+      }
+    }
+
+    function renderSubcatPagination(total, limit, page) {
+      const el = document.getElementById('subcatPagination');
+      const pages = Math.ceil(total / limit);
+      if (pages <= 1) { el.innerHTML = ''; return; }
+      let html = '';
+      for (let i = 1; i <= pages; i++) {
+        const cls = i === page ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+        html += '<button class="' + cls + '" onclick="loadSubcategoryImages(window._curSubcatName,' + i + ')" style="font-size:11px;padding:4px 10px">' + i + '</button>';
+      }
+      el.innerHTML = html;
+    }
+
+    // ---- Image edit ----
+    function editImage(imageId) {
+      _editorImageId = imageId;
+      const modal = document.getElementById('editorModal');
+      modal.style.display = 'flex';
+      document.getElementById('editorSaveBtn').disabled = false;
+      document.getElementById('editorSaveBtn').textContent = '💾 保存';
+      document.getElementById('editorThumb').src = '/api/image-index/images/' + imageId;
+            // 直接用图片详情 API 获取完整数据
+            api('GET', '/api/image-index/' + imageId).then(function(r) {
+              const img = r.data;
+              if (img) {
+                document.getElementById('editorId').value = img.id;
+                document.getElementById('editorPath').value = img.file_path || '';
+                document.getElementById('editorDesc').value = img.description || '';
+                document.getElementById('editorTags').value = Array.isArray(img.tags) ? img.tags.join(', ') : (img.tags || '');
+                document.getElementById('editorCustomers').value = img.applicable_customers || '';
+                document.getElementById('editorCaseGroup').value = img.case_group_id || '';
+                document.getElementById('editorRemark').value = img.remark || '';
+                document.getElementById('editorUseCount').value = img.use_count || 0;
+              } else {
+                // Fallback: fill what we can
+                document.getElementById('editorId').value = imageId;
+              }
+            }).catch(function(e) {
+              document.getElementById('editorId').value = imageId;
+            });
+    }
+
+    function closeEditorModal() {
+      document.getElementById('editorModal').style.display = 'none';
+      _editorImageId = null;
+    }
+
+    async function saveImageEdit() {
+      const id = _editorImageId;
+      if (!id) { showToast('错误：未指定图片'); return; }
+      const data = {
+        description: document.getElementById('editorDesc').value.trim(),
+        tags: document.getElementById('editorTags').value.trim(),
+        applicable_customers: document.getElementById('editorCustomers').value.trim(),
+        case_group_id: document.getElementById('editorCaseGroup').value.trim(),
+        remark: document.getElementById('editorRemark').value.trim()
+      };
+      document.getElementById('editorSaveBtn').disabled = true;
+      document.getElementById('editorSaveBtn').textContent = '⏳ 保存中...';
+      try {
+        const r = await api('PUT', '/api/image-index/images/' + id, data);
+        if (r.status === 'ok') {
+          showToast('✅ 保存成功');
+                    closeEditorModal();
+                    _clearSubcatImageCache(_curSubcatName);
+                    loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+        } else {
+          showToast('❌ 保存失败: ' + (r.message || '未知错误'));
+          document.getElementById('editorSaveBtn').disabled = false;
+          document.getElementById('editorSaveBtn').textContent = '💾 保存';
+        }
+      } catch(e) {
+        showToast('❌ 保存失败: ' + e.message);
+        document.getElementById('editorSaveBtn').disabled = false;
+        document.getElementById('editorSaveBtn').textContent = '💾 保存';
+      }
+    }
+
+    // ---- Delete image ----
+    function deleteImage(imageId) {
+          showCustomConfirm('确定要删除这张图片吗？删除后无法恢复。', function() {
+            api('DELETE', '/api/image-index/images/' + imageId).then(function(r) {
+              if (r.status === 'ok') {
+                showToast('✅ 已删除');
+                _clearSubcatImageCache(_curSubcatName);
+                loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+          } else {
+            showToast('❌ 删除失败: ' + (r.message || '未知错误'));
+          }
+        }).catch(function(e) {
+          showToast('❌ 删除失败: ' + e.message);
+        });
+      });
+    }
+
+    // ---- Batch operations ----
+    function toggleSelectAll(cb) {
+      const checks = document.querySelectorAll('.img-checkbox');
+      checks.forEach(function(c) { c.checked = cb.checked; });
+    }
+
+    function getSelectedImageIds() {
+      const ids = [];
+      document.querySelectorAll('.img-checkbox:checked').forEach(function(c) {
+        ids.push(parseInt(c.value));
+      });
+      return ids;
+    }
+
+    function executeBatchAction() {
+      const action = document.getElementById('batchActionSelect').value;
+      if (!action) { showToast('请选择批量操作类型'); return; }
+      const ids = getSelectedImageIds();
+      if (!ids.length) { showToast('请先勾选要操作的图片'); return; }
+      if (action === 'delete') {
+        batchDeleteImages(ids);
+      } else if (action === 'tag') {
+        batchTagImages(ids);
+      }
+    }
+
+    function batchDeleteImages(ids) {
+          showCustomConfirm('确定要批量删除选中的 ' + ids.length + ' 张图片吗？', function() {
+            api('POST', '/api/image-index/batch-delete', { image_ids: ids }).then(function(r) {
+              if (r.status === 'ok') {
+                showToast('✅ 已批量删除');
+                _clearSubcatImageCache(_curSubcatName);
+                loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+          } else {
+            showToast('❌ 批量删除失败');
+          }
+        }).catch(function(e) {
+          showToast('❌ 批量删除失败: ' + e.message);
+        });
+      });
+    }
+
+    function batchTagImages(ids) {
+      // Show prompt for tags
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML =
+        '<div class="modal-card" style="width:400px">' +
+          '<div class="modal-header"><h3>🏷 批量标签</h3></div>' +
+          '<div class="modal-body">' +
+            '<div style="font-size:13px;color:var(--text-secondary);margin-bottom:10px">为选中的 ' + ids.length + ' 张图片设置标签（逗号分隔）</div>' +
+            '<input id="batchTagInput" class="form-input" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none" placeholder="例如：排油明显, 高血脂, 女性">' +
+          '</div>' +
+          '<div class="modal-footer">' +
+            '<button class="btn btn-outline" id="batchTagCancel">取消</button>' +
+            '<button class="btn btn-primary" id="batchTagOk">确定</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.querySelector('#batchTagOk').onclick = function() {
+        const tags = overlay.querySelector('#batchTagInput').value.trim();
+        overlay.remove();
+        if (!tags) { showToast('请输入标签'); return; }
+        api('POST', '/api/image-index/batch-tag', { image_ids: ids, tags: tags }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 批量标签成功');
+            loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+          } else {
+            showToast('❌ 批量标签失败');
+          }
+        }).catch(function(e) {
+          showToast('❌ 批量标签失败: ' + e.message);
+        });
+      };
+      overlay.querySelector('#batchTagCancel').onclick = function() { overlay.remove(); };
+      overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+      setTimeout(function() { overlay.querySelector('#batchTagInput').focus(); }, 100);
+    }
+
+    // ---- Upload local images ----
+    function uploadLocalImages(category) {
+      // Create hidden file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.multiple = true;
+      input.onchange = function(e) {
+        const files = e.target.files;
+        if (!files || !files.length) return;
+        const formData = new FormData();
+        for (let i = 0; i < files.length; i++) {
+          formData.append('files[]', files[i]);
+        }
+        formData.append('category', category);
+        showToast('⏳ 正在上传 ' + files.length + ' 张图片...');
+        fetch('/api/image-index/upload', { method: 'POST', body: formData }).then(function(r) {
+          return r.json();
+        }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 上传完成，共 ' + (r.data && r.data.count) + ' 张');
+            loadSubcategoryImages(category, 1);
+          } else {
+            showToast('❌ 上传失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 上传失败: ' + e.message);
+        });
+        // Close the dropdown
+        document.getElementById('addImageOptions').style.display = 'none';
+      };
+      input.click();
+    }
+
+    // ---- Copy from other category ----
+    function copyFromOtherCategory(targetCategory) {
+      // First get all subcategories
+      api('GET', '/api/image-index/subcategories').then(function(r) {
+        const subs = (r.data && r.data.subcategories) || [];
+        const others = subs.filter(function(s) { return s.name !== targetCategory; });
+        let optionsHtml = '<option value="">-- 选择源分类 --</option>';
+        for (const s of others) {
+          optionsHtml += '<option value="' + escapeHtml(s.name).replace(/"/g,'&quot;') + '">' + escapeHtml(s.name) + ' (' + s.count + '张)</option>';
+        }
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay';
+        overlay.innerHTML =
+          '<div class="modal-card" style="width:550px;max-height:80vh">' +
+            '<div class="modal-header"><h3>📋 从其他分类复制图片</h3></div>' +
+            '<div class="modal-body">' +
+              '<div class="form-group">' +
+                '<label>源分类</label>' +
+                '<select id="copySourceSelect" style="width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:var(--radius);font-size:14px;outline:none;background:var(--input-bg)" onchange="loadCopySourceImages(this.value)">' + optionsHtml + '</select>' +
+              '</div>' +
+              '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:6px">勾选要复制的图片（点击缩略图可预览）</div>' +
+              '<div id="copyImageList" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:8px;min-height:60px">' +
+                '<div style="text-align:center;padding:20px;color:var(--text-secondary)">请先选择源分类</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="modal-footer">' +
+              '<button class="btn btn-outline" id="copyCancelBtn">取消</button>' +
+              '<button class="btn btn-primary" id="copyOkBtn" disabled>📋 复制选中图片</button>' +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(overlay);
+
+        overlay.querySelector('#copyCancelBtn').onclick = function() { overlay.remove(); };
+        overlay.querySelector('#copyOkBtn').onclick = function() {
+          const selectedIds = [];
+          overlay.querySelectorAll('.copy-checkbox:checked').forEach(function(cb) {
+            selectedIds.push(parseInt(cb.value));
+          });
+          if (!selectedIds.length) { showToast('请勾选要复制的图片'); return; }
+          api('POST', '/api/image-index/copy-to-category', { image_ids: selectedIds, category: targetCategory }).then(function(r) {
+            if (r.status === 'ok') {
+              showToast('✅ 复制完成');
+              overlay.remove();
+              loadSubcategoryImages(targetCategory, 1);
+            } else {
+              showToast('❌ 复制失败: ' + (r.message || ''));
+            }
+          }).catch(function(e) {
+            showToast('❌ 复制失败: ' + e.message);
+          });
+        };
+        overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+
+        // Save load function on window for the onchange handler
+        window.loadCopySourceImages = function(catName) {
+          if (!catName) {
+            document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">请选择源分类</div>';
+            document.getElementById('copyOkBtn').disabled = true;
+            return;
+          }
+          document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载中...</div>';
+          api('GET', '/api/image-index/subcategories/' + encodeURIComponent(catName) + '/images?limit=100').then(function(r) {
+            const images = (r.data && r.data.images) || [];
+            if (!images.length) {
+              document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">该分类暂无图片</div>';
+              document.getElementById('copyOkBtn').disabled = true;
+              return;
+            }
+            let html = '';
+            for (const img of images) {
+              const desc = img.description || '';
+              html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0">';
+              html += '<input type="checkbox" class="copy-checkbox" value="' + img.id + '">';
+              html += '<img src="/api/image-index/images/' + img.id + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="openImagePreview(\'/api/image-index/images/' + img.id + '\')" onerror="this.style.display=\'none\'">';
+              html += '<span style="flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(desc.substring(0,60)) + '</span>';
+              html += '<span style="font-size:11px;color:var(--accent)">' + (Array.isArray(img.tags) ? img.tags.slice(0,2).join(', ') : '') + '</span>';
+              html += '</div>';
+            }
+            document.getElementById('copyImageList').innerHTML = html;
+            document.getElementById('copyOkBtn').disabled = false;
+            // Monitor checkbox changes to enable/disable button
+          }).catch(function(e) {
+            document.getElementById('copyImageList').innerHTML = '<div style="text-align:center;padding:20px;color:red">加载失败: ' + e.message + '</div>';
+          });
+        };
+      });
+    }
+
+    // ---- Update subcategory description ----
+    async function updateSubcategoryDesc() {
+      const name = _curSubcatName;
+      const desc = document.getElementById('categoryDescInput').value.trim();
+      const btn = document.getElementById('saveDescBtn');
+      btn.textContent = '⏳ 保存中...';
+      btn.disabled = true;
+      try {
+        const r = await api('PUT', '/api/image-index/subcategories/' + encodeURIComponent(name), { description: desc });
+        if (r.status === 'ok') {
+                  showToast('✅ 描述已更新');
+                  btn.textContent = '💾 保存';
+                  btn.style.display = 'none';
+                  btn.disabled = false;
+                  // 清空该分类的图片缓存，下次打开重新加载
+                  _clearSubcatImageCache(name);
+                  // Refresh grid
+          imageIndexRenderGrid();
+        } else {
+          showToast('❌ 更新失败: ' + (r.message || ''));
+          btn.textContent = '💾 保存';
+          btn.disabled = false;
+        }
+      } catch(e) {
+        showToast('❌ 更新失败: ' + e.message);
+        btn.textContent = '💾 保存';
+        btn.disabled = false;
+      }
+    }
+
+    // ---- Delete subcategory ----
+    function confirmDeleteSubcategory(name) {
+      showCustomConfirm('确定要删除子分类 "' + name + '" 吗？该分类下的图片也将被删除，操作不可恢复！', function() {
+        api('DELETE', '/api/image-index/subcategories/' + encodeURIComponent(name)).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 子分类已删除');
+            imageIndexRenderGrid();
+          } else {
+            showToast('❌ 删除失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 删除失败: ' + e.message);
+        });
+      });
+    }
+
+    // ---- Edit subcategory description (from grid card) ----
+    function showEditSubcategoryDesc(name, currentDesc) {
+      showPrompt('编辑 "' + name + '" 的描述', currentDesc || '', '编辑描述').then(function(newDesc) {
+        if (newDesc === null) return; // cancelled
+        api('PUT', '/api/image-index/subcategories/' + encodeURIComponent(name), { description: newDesc }).then(function(r) {
+          if (r.status === 'ok') {
+            showToast('✅ 描述已更新');
+            imageIndexRenderGrid();
+          } else {
+            showToast('❌ 更新失败: ' + (r.message || ''));
+          }
+        }).catch(function(e) {
+          showToast('❌ 更新失败: ' + e.message);
+        });
+      });
+    }
+
+    // ---- Add subcategory removed ----
+    function showAddSubcategoryModal() {
+      showToast('请使用「选择文件夹」自动创建分类');
+    }
+
+    // ---- Toggle add-image dropdown ----
+    function toggleAddImageOptions() {
+      const el = document.getElementById('addImageOptions');
+      el.style.display = el.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // ---- Image preview ----
+    function openImagePreview(src) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.style.cursor = 'zoom-out';
+      overlay.innerHTML = '<div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center"><img src="' + src + '" style="max-width:100%;max-height:90vh;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,0.3)"></div>';
+      overlay.onclick = function() { overlay.remove(); };
+      document.body.appendChild(overlay);
+    }
+
+    // ---- Custom confirm ----
+    function showCustomConfirm(msg, onConfirm) {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML =
+        '<div class="modal-card" style="width:400px">' +
+          '<div class="modal-header"><h3>⚠️ 确认操作</h3></div>' +
+          '<div class="modal-body" style="font-size:14px;line-height:1.6">' + escapeHtml(msg) + '</div>' +
+          '<div class="modal-footer">' +
+            '<button class="btn btn-outline" id="customConfirmNo">取消</button>' +
+            '<button class="btn btn-danger" id="customConfirmYes">确定</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.querySelector('#customConfirmYes').onclick = function() { overlay.remove(); if (onConfirm) onConfirm(); };
+      overlay.querySelector('#customConfirmNo').onclick = function() { overlay.remove(); };
+      overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    }
+
+    // ---- Override searchImages for cross-category search ----
+    async function searchImages() {
+      const q = document.getElementById('imageSearchInput').value.trim();
+      if (!q) { showToast('请输入搜索关键词'); return; }
+      try {
+        const params = new URLSearchParams({ q: q, limit: 50 });
+        const r = await api('GET', '/api/image-index/search?' + params.toString());
+        const images = r.data;
+        const grid = document.getElementById('imageIndexGrid');
+        if (!images || images.length === 0) {
+          grid.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)"><div style="font-size:48px;margin-bottom:16px">🔍</div><div>未找到匹配的图片</div><div style="font-size:13px;margin-top:8px">试试其他关键词</div></div>';
+          return;
+        }
+        let html = '<div style="display:flex;gap:8px;padding:8px 0;font-size:13px;color:var(--text-secondary)"><span>搜索 "' + q + '" 共 ' + images.length + ' 张</span><button class="btn btn-outline btn-xs" onclick="imageIndexRenderGrid()">清除搜索</button></div>';
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px">';
+        for (const img of images) {
+          const tags = Array.isArray(img.tags) ? img.tags.join(', ') : img.tags || '';
+          const desc = (img.description || '').substring(0, 150);
+          html += '<div style="padding:12px;background:var(--card-bg);border-radius:8px;border:1px solid var(--border)">';
+          html += '<div style="font-size:12px;color:var(--text-secondary);margin-bottom:4px">[' + (img.category||'') + ']</div>';
+          html += '<div style="font-size:13px;line-height:1.5;margin-bottom:6px">' + escapeHtml(desc) + (desc.length>=150?'...':'') + '</div>';
+          html += '<div style="font-size:11px;color:var(--accent)">' + escapeHtml(tags) + '</div>';
+          if (img.applicable_customers) {
+            html += '<div style="font-size:11px;color:#888;margin-top:4px;border-top:1px solid var(--border);padding-top:4px">' + escapeHtml(img.applicable_customers.substring(0, 120)) + '</div>';
+          }
+          html += '</div>';
+        }
+        html += '</div>';
+        grid.innerHTML = html;
+      } catch(e) {
+        showToast('搜索失败: ' + e.message);
+      }
+    }
+
+
+
+    // ---- Keep reRecognizeImage for backward compatibility ----
+    async function reRecognizeImage(imageId) {
+      try {
+        const r = await api('POST', '/api/image-index/re-recognize/' + imageId, {});
+        if (r.status === 'ok') {
+          showToast('✅ 重新识别成功');
+          if (_curSubcatName) loadSubcategoryImages(_curSubcatName, _curSubcatPage);
+        } else {
+          showToast('❌ 识别失败: ' + (r.message || '未知错误'));
+        }
+      } catch(e) {
+        showToast('❌ 识别失败: ' + e.message);
+      }
+    }
+
+    // ---- Close any stray confirm dropdown ----
+    document.addEventListener('click', function(e) {
+      const opts = document.getElementById('addImageOptions');
+      if (opts && opts.style.display !== 'none' && !e.target.closest('#addImageBtn') && !e.target.closest('#addImageOptions')) {
+        opts.style.display = 'none';
+      }
+    });
+
+    </script>
+    </body>
+    </html>
