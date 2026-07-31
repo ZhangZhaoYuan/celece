@@ -132,10 +132,9 @@ def _find_vec_dll() -> str:
 
 def _ensure_db():
     """确保数据库表和向量索引已创建"""
-    # knowledge_chunks 在主库
-    mconn = sqlite3.connect(str(DB_PATH))
-    mconn.row_factory = sqlite3.Row
-    mconn.execute("""
+    # knowledge_chunks 和 knowledge_vectors 都在向量库
+    conn = _get_vec_conn()
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS knowledge_chunks (
             id TEXT PRIMARY KEY,
             doc_id TEXT NOT NULL,
@@ -146,11 +145,8 @@ def _ensure_db():
             created_at TEXT DEFAULT (datetime('now','localtime'))
         )
     """)
-    mconn.commit()
-    mconn.close()
+    conn.commit()
 
-    # sqlite-vec 向量索引表在向量库
-    conn = _get_vec_conn()
     try:
         conn.execute(f"""
             CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vectors USING vec0(
@@ -160,12 +156,10 @@ def _ensure_db():
         """)
     except Exception:
         pass  # 已存在则跳过
-
-    conn.commit()
     conn.close()
 
 
-# ===== Embedding API 调用 =====
+# 错误重试机制
 
 def _get_embedding(text: str) -> Optional[List[float]]:
     """调用 embedding API 获取单条文本的向量"""
@@ -425,7 +419,7 @@ def add_document(filename: str, content: str) -> dict:
     # 批量生成向量（API 调用）
     vectors = _get_embeddings_batch(chunks) if chunks else None
 
-    # 存入 sqlite-vec
+    # 存入向量库（knowledge_chunks + knowledge_vectors 都在同一库）
     conn = _get_vec_conn()
     for i, chunk in enumerate(chunks):
         chunk_id = f"{file_id}_{i}"
@@ -436,7 +430,7 @@ def add_document(filename: str, content: str) -> dict:
             (chunk_id, file_id, i, chunk, filename, Path(filename).stem, now)
         )
 
-        # 向量（仅在 API 成功时）
+        # 向量
         if vectors and i < len(vectors) and vectors[i] is not None:
             try:
                 conn.execute(
@@ -1244,9 +1238,8 @@ def reindex_all():
                 # 批量生成向量
                 vectors = _get_embeddings_batch(chunks) if chunks else None
 
-                # 写入主库 chunks 表
-                mconn = sqlite3.connect(str(DB_PATH))
-                mconn.row_factory = sqlite3.Row
+                # 写入向量库 chunks 表
+                mconn = _get_vec_conn()
                 mconn.execute("DELETE FROM knowledge_chunks WHERE doc_id=?", (doc["id"],))
                 now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 title = doc.get("title", "") or ""

@@ -1344,14 +1344,13 @@ def _split_keywords(text: str) -> list:
     raw = re.sub(r'[→▶➡\-–—,，、：:()（）【】\[\]{}。！？；;!?\s%…""''《》<>]', ' ', text)
     # 按空格拆分，过滤过短的词
     words = [w.strip() for w in raw.split() if len(w.strip()) >= 2]
-    # 如果拆分后没有词（纯中文长句），用2-4字滑动窗口提取
-    if not words and len(text) >= 2:
+    # 如果拆分后没有词或全是长词（>4字），用2-4字滑动窗口提取
+    if (not words or all(len(w) > 4 for w in words)) and len(text) >= 2:
         cleaned = re.sub(r'[→▶➡\-–—,，、：:()（）【】\[\]{}。！？；;!?\s%…""''《》<>]', '', text)
         for win_size in [4, 3, 2]:
             for i in range(len(cleaned) - win_size + 1):
                 words.append(cleaned[i:i+win_size])
-            words = list(dict.fromkeys(words))[:20]
-            break
+        words = list(dict.fromkeys(words))[:20]
     # 去重保留顺序，限制20个关键词
     seen = set()
     result = []
@@ -1464,9 +1463,57 @@ def search_images_hybrid(query="", category="", limit=12):
                 vconn.close()
                 conn.close()
 
-    # 3. 合并去重（按ID去重，提高分）
             except Exception:
                 pass
+
+    # 2c. 关键词匹配分类名：拆出的关键词能匹配分类名 → 把该分类图片补进来
+    cat_matched_results = []
+    if query:
+        try:
+            keywords = _split_keywords(query)
+            if keywords:
+                conn = get_db()
+                all_cats = [r[0] for r in conn.execute("SELECT DISTINCT ic.category_name FROM image_categories ic ORDER BY ic.category_name").fetchall()]
+                matched_cats = {}
+                for kw in keywords:
+                    if len(kw) < 2: continue
+                    kw_clean = kw.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
+                    for cat in all_cats:
+                        cat_clean = cat.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
+                        match_len = 0
+                        if kw in cat or cat in kw:
+                            match_len = len(kw)
+                        elif kw_clean in cat_clean or cat_clean in kw_clean:
+                            match_len = min(len(kw_clean), len(cat_clean))
+                        elif len(kw_clean) >= 3 and len(cat_clean) >= 3 and kw_clean[:3] == cat_clean[:3]:
+                            match_len = 2
+                        if match_len > 0:
+                            # 匹配精度加权：两端长度越接近分越高
+                            precision = min(len(kw_clean), len(cat_clean)) / max(len(kw_clean), len(cat_clean), 1)
+                            cat_score = 1.0 + match_len * 0.2 * precision
+                            # 同分类取最高分
+                            old = matched_cats.get(cat, 0)
+                            matched_cats[cat] = max(old, cat_score)
+                for cat_name, cat_score in matched_cats.items():
+                    cat_imgs = conn.execute(
+                        "SELECT ii.* FROM image_index ii JOIN image_categories ic ON ii.id = ic.image_id WHERE ic.category_name=? AND ii.status='done'",
+                        (cat_name,)
+                    ).fetchall()
+                    for img in cat_imgs:
+                        img = dict(img)
+                        try:
+                            img['tags'] = json.loads(img['tags']) if img.get('tags') else []
+                        except (json.JSONDecodeError, TypeError):
+                            img['tags'] = [t.strip() for t in img['tags'].split(',') if t.strip()] if img.get('tags') else []
+                        img['_kw_score'] = cat_score
+                        img['_source'] = 'category_keyword'
+                        img['_matched_category'] = cat_name
+                        cat_matched_results.append(img)
+                conn.close()
+        except Exception:
+            pass
+
+    # 3. 合并去重（按ID去重，提高分）
     seen_ids = set()
     merged = []
 
@@ -1477,6 +1524,13 @@ def search_images_hybrid(query="", category="", limit=12):
             seen_ids.add(img_id)
             img['_kw_score'] = 1.0
             img['_source'] = 'keyword'
+            merged.append(img)
+
+    # 分类名匹配结果（最高优先级，score=1.2）
+    for img in cat_matched_results:
+        img_id = img["id"]
+        if img_id not in seen_ids:
+            seen_ids.add(img_id)
             merged.append(img)
 
     # 再语义结果（如果不在关键词结果中，加分；如果在，提升分数）

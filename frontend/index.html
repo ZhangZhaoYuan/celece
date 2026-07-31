@@ -242,7 +242,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
           <button class="btn btn-ghost btn-sm" onclick="uploadKnowledge()">📄 上传文档</button>
           <button class="btn btn-outline btn-sm" onclick="reindexKnowledge()">🔄 重建索引</button>
           <button class="btn btn-outline btn-sm" onclick="showPage('imageindex')" style="margin-left:auto">📷 图片索引</button>
-                    <input type="file" id="kbFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" onchange="handleUpload(event)">
+                    <input type="file" id="kbFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" onchange="handleUpload(event)" multiple>
                   </div>
         <div style="display:flex;flex:1;overflow:hidden"><div id="kbList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div><div id="kbDetail" style="flex:1;overflow-y:auto;padding:20px 24px"><div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个文档查看详情</div></div></div>
       </div>
@@ -1538,7 +1538,7 @@ async function sendMessage() {
           role: 'assistant',
           content: scriptContent,
           _parts: parts,
-          _expanded: false,
+          _expanded: true,
           _local_matches: local_matches,
           _pending_image_matches: pending_image_matches,
           timestamp: ts,
@@ -2667,20 +2667,28 @@ async function viewKnowledgeDoc(docId) {
 }
 function uploadKnowledge() { document.getElementById('kbFileInput').click(); }
 async function handleUpload(e) {
-  var file = e.target.files[0];
-  if (!file) return;
+  var files = e.target.files;
+  if (!files || !files.length) return;
   var btn = document.querySelector('.kb-toolbar .btn-ghost');
-  if (btn) { btn.disabled = true; btn.textContent = '上传中...'; }
-  var form = new FormData();
-  form.append('file', file);
-  try {
-    await fetch('/api/knowledge/upload', { method: 'POST', body: form });
-    showToast('上传成功，正在建立索引...');
+  var total = files.length, done = 0, failed = 0;
+  for (var i = 0; i < total; i++) {
+    var file = files[i];
+    if (btn) { btn.disabled = true; btn.textContent = '上传中 (' + (done+failed+1) + '/' + total + ')...'; }
+    var form = new FormData();
+    form.append('file', file);
+    try {
+      await fetch('/api/knowledge/upload', { method: 'POST', body: form });
+      done++;
+    } catch(err) { failed++; }
+  }
+  if (done > 0) {
+    showToast('上传完成 ' + done + ' 个，正在建立索引...');
     await api('POST', '/api/knowledge/reindex');
     showToast('索引完成');
-    await loadKnowledge();
-  } catch(e) { showToast('上传失败: ' + e.message); }
-  if (btn) { btn.disabled = false; btn.textContent = '上传文档'; }
+  }
+  if (failed > 0) showToast(failed + ' 个文件上传失败');
+  await loadKnowledge();
+  if (btn) { btn.disabled = false; btn.textContent = '📄 上传文档'; }
   e.target.value = '';
 }
 async function reindexKnowledge() {

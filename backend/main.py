@@ -1669,9 +1669,8 @@ async def api_get_document_chunks(doc_id: str):
     try:
         import sqlite3
         from knowledge import DB_PATH, VEC_DB_PATH, _get_vec_conn
-        # 从主库获取片段
-        mconn = sqlite3.connect(str(DB_PATH))
-        mconn.row_factory = sqlite3.Row
+        # 从向量库获取片段（knowledge_chunks 在向量库）
+        mconn = _get_vec_conn()
         try:
             rows = mconn.execute("SELECT id, chunk_index, content FROM knowledge_chunks WHERE doc_id = ? ORDER BY chunk_index", (doc_id,)).fetchall()
         except Exception:
@@ -3028,9 +3027,9 @@ def start_server():
         try:
             import subprocess, webbrowser
             chrome_paths = [
-                "C:\Program Files\Google\Chrome\Application\chrome.exe",
-                "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-                os.path.expanduser("~\AppData\Local\Google\Chrome\Application\chrome.exe"),
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expanduser(r"~\AppData\Local\Google\Chrome\Application\chrome.exe"),
             ]
             chrome_found = None
             for p in chrome_paths:
