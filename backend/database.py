@@ -1295,9 +1295,11 @@ def rebuild_category_profile_vectors(batch_size=5):
         return {"status": "error", "message": "向量扩展不可用"}
 
     try:
-        vconn = _get_image_vec_conn()
-        vconn.execute("DELETE FROM category_profile_vectors")
-        vconn.commit()
+            vconn = _get_image_vec_conn()
+            dim = _get_image_embedding_dim()
+            vconn.execute(f"CREATE VIRTUAL TABLE IF NOT EXISTS category_profile_vectors USING vec0(category_name TEXT PRIMARY KEY, vector FLOAT[{dim}])")
+            vconn.execute("DELETE FROM category_profile_vectors")
+            vconn.commit()
     except Exception:
         pass
 
@@ -1362,195 +1364,133 @@ def _split_keywords(text: str) -> list:
 
 
 def search_images_hybrid(query="", category="", limit=12):
-    """混合搜索：关键词 LIKE + 语义向量搜索。长查询自动拆关键词"""
-    # 1. 关键词搜索
-    keyword_results = search_images(query=query, category=category, limit=limit * 2)
+    """混合搜索：以分类匹配为主，个体图片搜索为辅"""
+    conn = get_db()
 
-    # 1b. 如果全文关键词搜索没结果且查询较长，拆分成关键词分别搜索
-    if not keyword_results and query and len(query) > 10:
-        keywords = _split_keywords(query)
-        if keywords:
-            kw_seen = set()
-            kw_merged = []
-            for kw in keywords[:5]:  # 最多搜前5个关键词
-                kws = search_images(query=kw, category=category, limit=limit)
-                for img in kws:
-                    if img["id"] not in kw_seen:
-                        kw_seen.add(img["id"])
-                        img['_kw_score'] = 0.8
-                        img['_source'] = 'keyword_split'
-                        kw_merged.append(img)
-            keyword_results = kw_merged
+    # 0. 如果指定了分类，直接返回该分类的图片
+    if category:
+        results = search_images(query="", category=category, limit=limit)
+        for r in results:
+            r['_kw_score'] = 1.0
+            r['_source'] = 'category'
+        conn.close()
+        return results
 
-    # 2. 语义搜索（图片 + 分类描述）
-    semantic_results = []
-    if _IMAGE_EMBEDDING_AVAILABLE and query.strip():
-        query_vec, _ = _get_image_embedding(query.strip())
+    # 1. 拆关键词
+    keywords = _split_keywords(query) if query else []
+    query_vec = None
+    if _IMAGE_EMBEDDING_AVAILABLE and query:
+        query_vec, _ = _get_image_embedding(query)
+
+    # 2. 匹配分类（语义 + 关键词 双路）
+    cat_scores = {}  # category_name → score
+    try:
+        # 2a. 语义匹配分类描述
         if query_vec:
-            try:
-                vconn = _get_image_vec_conn()
-                vec_str = _vec_to_str(query_vec)
+            vconn = _get_image_vec_conn()
+            vec_str = _vec_to_str(query_vec)
+            cat_rows = vconn.execute(
+                "SELECT cpv.category_name, cpv.distance FROM category_profile_vectors cpv WHERE cpv.vector MATCH ? AND k=? ORDER BY cpv.distance",
+                (vec_str, limit * 2)
+            ).fetchall()
+            for r in cat_rows:
+                cat_scores[r["category_name"]] = max(0, 1.0 - r["distance"] / 2.0)
+            vconn.close()
 
-                # 2a. 图片向量搜索
-                rows = vconn.execute(
-                    f"""
-                    SELECT v.image_id, v.distance
-                    FROM image_vectors v
-                    WHERE v.vector MATCH ?
-                      AND k = ?
-                    ORDER BY v.distance
-                    """,
-                    (vec_str, limit * 2)
-                ).fetchall()
+        # 2b. 关键词匹配分类名
+        all_cats = [r[0] for r in conn.execute(
+            "SELECT DISTINCT ic.category_name FROM image_categories ic ORDER BY ic.category_name"
+        ).fetchall()]
+        for kw in keywords:
+            if len(kw) < 2: continue
+            kw_clean = kw.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
+            for cat in all_cats:
+                cat_clean = cat.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
+                match_len = 0
+                if kw in cat or cat in kw:
+                    match_len = len(kw)
+                elif kw_clean in cat_clean or cat_clean in kw_clean:
+                    match_len = min(len(kw_clean), len(cat_clean))
+                elif len(kw_clean) >= 3 and len(cat_clean) >= 3 and kw_clean[:3] == cat_clean[:3]:
+                    match_len = 2
+                if match_len > 0:
+                    precision = min(len(kw_clean), len(cat_clean)) / max(len(kw_clean), len(cat_clean), 1)
+                    kw_score = 1.0 + match_len * 0.3 * precision
+                    cat_scores[cat] = max(cat_scores.get(cat, 0), kw_score)
 
-                # 获取图片详情
-                conn = get_db()
-                for row in rows:
-                    img_id = row["image_id"]
-                    distance = row["distance"]
-                    img = conn.execute(
-                        "SELECT * FROM image_index WHERE id=? AND status='done'",
-                        (img_id,)
-                    ).fetchone()
-                    if img:
-                        img = dict(img)
-                        try:
-                            img['tags'] = json.loads(img['tags']) if img.get('tags') else []
-                        except (json.JSONDecodeError, TypeError):
-                            img['tags'] = [t.strip() for t in img['tags'].split(',') if t.strip()] if img.get('tags') else []
-                        img['_semantic_score'] = max(0, 1.0 - distance / 2.0)
-                        img['_source'] = 'semantic'
-                        semantic_results.append(img)
+        # 2c. 语义匹配分类描述 + 关键词也匹配同一分类 → 加权
+        if query_vec:
+            vconn = _get_image_vec_conn()
+            cat_rows = vconn.execute(
+                "SELECT cpv.category_name, cpv.distance FROM category_profile_vectors cpv WHERE cpv.vector MATCH ? AND k=? ORDER BY cpv.distance",
+                (vec_str, limit * 2)
+            ).fetchall()
+            for r in cat_rows:
+                sem_score = max(0, 1.0 - r["distance"] / 2.0)
+                if r["category_name"] in cat_scores:
+                    # 语义+关键词都命中 → 加权
+                    cat_scores[r["category_name"]] += sem_score * 0.5
+                else:
+                    cat_scores[r["category_name"]] = sem_score * 0.6
+            vconn.close()
 
-                # 2b. 分类描述向量搜索：命中分类描述 → 把该分类下的图也拉进来
-                try:
-                    cat_rows = vconn.execute(
-                        f"""
-                        SELECT cpv.category_name, cpv.distance
-                        FROM category_profile_vectors cpv
-                        WHERE cpv.vector MATCH ?
-                          AND k = ?
-                        ORDER BY cpv.distance
-                        """,
-                        (vec_str, limit * 2)
-                    ).fetchall()
-                    for cat_row in cat_rows:
-                        cat_name = cat_row["category_name"]
-                        cat_distance = cat_row["distance"]
-                        cat_score = max(0, 1.0 - cat_distance / 2.0)
-                        # 找出该分类下的所有图片
-                        cat_imgs = conn.execute(
-                            """SELECT ii.* FROM image_index ii
-                               JOIN image_categories ic ON ii.id = ic.image_id
-                               WHERE ic.category_name=? AND ii.status='done'""",
-                            (cat_name,)
-                        ).fetchall()
-                        for img in cat_imgs:
-                            img = dict(img)
-                            try:
-                                try:
-                                    img['tags'] = json.loads(img['tags']) if img.get('tags') else []
-                                except (json.JSONDecodeError, TypeError):
-                                    img['tags'] = [t.strip() for t in img['tags'].split(',') if t.strip()] if img.get('tags') else []
-                                img['_source'] = 'category_semantic'
-                                img['_matched_category'] = cat_name
-                                semantic_results.append(img)
-                            except Exception:
-                                continue
-                except Exception:
-                    pass
+    except Exception:
+        pass
 
-                vconn.close()
-                conn.close()
-
-            except Exception:
-                pass
-
-    # 2c. 关键词匹配分类名：拆出的关键词能匹配分类名 → 把该分类图片补进来
-    cat_matched_results = []
-    if query:
-        try:
-            keywords = _split_keywords(query)
-            if keywords:
-                conn = get_db()
-                all_cats = [r[0] for r in conn.execute("SELECT DISTINCT ic.category_name FROM image_categories ic ORDER BY ic.category_name").fetchall()]
-                matched_cats = {}
-                for kw in keywords:
-                    if len(kw) < 2: continue
-                    kw_clean = kw.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
-                    for cat in all_cats:
-                        cat_clean = cat.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
-                        match_len = 0
-                        if kw in cat or cat in kw:
-                            match_len = len(kw)
-                        elif kw_clean in cat_clean or cat_clean in kw_clean:
-                            match_len = min(len(kw_clean), len(cat_clean))
-                        elif len(kw_clean) >= 3 and len(cat_clean) >= 3 and kw_clean[:3] == cat_clean[:3]:
-                            match_len = 2
-                        if match_len > 0:
-                            # 匹配精度加权：两端长度越接近分越高
-                            precision = min(len(kw_clean), len(cat_clean)) / max(len(kw_clean), len(cat_clean), 1)
-                            cat_score = 1.0 + match_len * 0.2 * precision
-                            # 同分类取最高分
-                            old = matched_cats.get(cat, 0)
-                            matched_cats[cat] = max(old, cat_score)
-                for cat_name, cat_score in matched_cats.items():
-                    cat_imgs = conn.execute(
-                        "SELECT ii.* FROM image_index ii JOIN image_categories ic ON ii.id = ic.image_id WHERE ic.category_name=? AND ii.status='done'",
-                        (cat_name,)
-                    ).fetchall()
-                    for img in cat_imgs:
-                        img = dict(img)
-                        try:
-                            img['tags'] = json.loads(img['tags']) if img.get('tags') else []
-                        except (json.JSONDecodeError, TypeError):
-                            img['tags'] = [t.strip() for t in img['tags'].split(',') if t.strip()] if img.get('tags') else []
-                        img['_kw_score'] = cat_score
-                        img['_source'] = 'category_keyword'
-                        img['_matched_category'] = cat_name
-                        cat_matched_results.append(img)
-                conn.close()
-        except Exception:
-            pass
-
-    # 3. 合并去重（按ID去重，提高分）
+    # 3. 从匹配的分类中取图片
     seen_ids = set()
     merged = []
 
-    # 先关键词结果（加权分高）
-    for img in keyword_results:
-        img_id = img["id"]
-        if img_id not in seen_ids:
-            seen_ids.add(img_id)
-            img['_kw_score'] = 1.0
-            img['_source'] = 'keyword'
-            merged.append(img)
+    # 按分数从高到低遍历分类
+    for cat_name, _ in sorted(cat_scores.items(), key=lambda x: -x[1]):
+        imgs = conn.execute(
+            "SELECT ii.* FROM image_index ii JOIN image_categories ic ON ii.id = ic.image_id WHERE ic.category_name=? AND ii.status='done' ORDER BY ii.img_order, ii.id LIMIT ?",
+            (cat_name, limit)
+        ).fetchall()
+        for img in imgs:
+            if len(merged) >= limit:
+                break
+            if img["id"] not in seen_ids:
+                seen_ids.add(img["id"])
+                img = dict(img)
+                try:
+                    img['tags'] = json.loads(img['tags']) if img.get('tags') else []
+                except (json.JSONDecodeError, TypeError):
+                    img['tags'] = [t.strip() for t in img['tags'].split(',') if t.strip()] if img.get('tags') else []
+                img['_kw_score'] = cat_scores[cat_name]
+                img['_source'] = 'category_match'
+                img['_matched_category'] = cat_name
+                merged.append(img)
+        if len(merged) >= limit:
+            break
 
-    # 分类名匹配结果（最高优先级，score=1.2）
-    for img in cat_matched_results:
-        img_id = img["id"]
-        if img_id not in seen_ids:
-            seen_ids.add(img_id)
-            merged.append(img)
-
-    # 再语义结果（如果不在关键词结果中，加分；如果在，提升分数）
-    for img in semantic_results:
-        img_id = img["id"]
-        if img_id in seen_ids:
-            # 已存在，提升分数（标记为混合匹配）
-            for existing in merged:
-                if existing["id"] == img_id:
-                    existing['_kw_score'] = existing.get('_kw_score', 0) + img.get('_semantic_score', 0.5) * 0.5
-                    existing['_source'] = 'hybrid'
-                    break
+    # 4. 如果分类匹配不够，用个体图片搜索兜底
+    if len(merged) < limit:
+        keyword_results = search_images(query=query, limit=limit)
+        if not keyword_results and keywords:
+            kw_seen = set()
+            for kw in keywords[:5]:
+                kws = search_images(query=kw, limit=limit)
+                for img in kws:
+                    if img["id"] not in kw_seen and img["id"] not in seen_ids:
+                        kw_seen.add(img["id"])
+                        seen_ids.add(img["id"])
+                        img['_kw_score'] = 0.8
+                        img['_source'] = 'keyword_fallback'
+                        merged.append(img)
+                        if len(merged) >= limit:
+                            break
         else:
-            seen_ids.add(img_id)
-            img['_kw_score'] = img.get('_semantic_score', 0.5) * 0.6
-            img['_source'] = 'semantic'
-            merged.append(img)
+            for img in keyword_results:
+                if len(merged) >= limit:
+                    break
+                if img["id"] not in seen_ids:
+                    seen_ids.add(img["id"])
+                    img['_kw_score'] = 1.0
+                    img['_source'] = 'keyword_fallback'
+                    merged.append(img)
 
-    # 按综合分数排序
-    merged.sort(key=lambda x: x.get('_kw_score', 0), reverse=True)
+    conn.close()
     return merged[:limit]
 
 
