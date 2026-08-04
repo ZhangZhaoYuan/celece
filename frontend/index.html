@@ -642,7 +642,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
               <input type="hidden" id="dlgPurchaseHistory" value="[]">
               <div class="latest-purchase" id="latestPurchaseDisplay" onclick="togglePurchaseHistory()" style="cursor:pointer;border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:8px;user-select:none;display:flex;justify-content:space-between;align-items:center;background:var(--bg-surface);color:var(--text-primary)">
                               <span style="color:var(--text-secondary);font-size:13px">暂无购买记录</span>
-                              <span style="color:var(--text-secondary);font-size:10px">▾</span>
+                              <span style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--text-secondary);flex-shrink:0"></span>
                             </div>
               <div class="purchase-history-list" id="purchaseHistoryList" style="display:none">
                 <div id="purchaseHistoryItems"></div>
@@ -675,7 +675,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
                 </div>
               </div>
             </div>
-            <div class="form-group"><label>客户类型</label><select id="dlgCustomerType"><option value="">自动</option><option value="cid">CID客户（未购买）</option><option value="treatment">疗程客户（<2970元）</option><option value="package">套餐客户（≥2970元）</option></select></div>
+            <div class="form-group" style="margin-bottom:4px"><label>客户类型</label><span id="dlgCustomerTypeDisplay" style="color:var(--text-primary);font-size:14px">CID客户</span></div>
       <div class="form-group"><label>备注</label><textarea id="dlgRemark" rows="3"></textarea></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
         <button class="btn btn-outline" onclick="closeModal('customerDialog')">取消</button>
@@ -1018,8 +1018,8 @@ async function editCustomer(id) {
     document.getElementById('dlgHeight').value = c.height || '';
     document.getElementById('dlgWeight').value = c.weight || '';
     document.getElementById('dlgTargetWeight').value = c.target_weight || '';
-        document.getElementById('dlgCustomerType').value = c.customer_type || '';
-        if (!c.customer_type) autoCalcCustomerType();
+        document.getElementById('dlgCustomerTypeDisplay').textContent = c.customer_type === 'package' ? '套餐客户' : c.customer_type === 'treatment' ? '疗程客户' : 'CID客户';
+                if (!c.customer_type) autoCalcCustomerType();
         document.getElementById('dlgRemark').value = c.remark || '';
         document.getElementById('dlgPurchaseHistory').value = c.purchase_history || '[]';
     updateLatestPurchaseDisplay();
@@ -3071,22 +3071,24 @@ function showAddCustomer() {
   document.getElementById('dlgWeight').value = '';
   document.getElementById('dlgTargetWeight').value = '';
     document.getElementById('dlgPurchaseHistory').value = '[]';
-    document.getElementById('dlgCustomerType').value = 'cid';
-    document.getElementById('dlgRemark').value = '';
+        document.getElementById('dlgCustomerTypeDisplay').textContent = 'CID客户';
+        document.getElementById('dlgRemark').value = '';
   updateLatestPurchaseDisplay();
   renderPurchaseHistoryList();
   showModal('customerDialog');
 }
 function autoCalcCustomerType() {
   const history = getPurchaseHistory();
-  const sel = document.getElementById('dlgCustomerType');
+  const display = document.getElementById('dlgCustomerTypeDisplay');
   if (history.length === 0) {
-    sel.value = 'cid';
+    display.textContent = 'CID客户';
     return;
   }
-  // 取所有购买记录中的最大金额
-  const maxAmount = Math.max.apply(null, history.map(function(r) { return r.amount || 0; }));
-  sel.value = maxAmount >= 2970 ? 'package' : 'treatment';
+  var maxAmount = 0;
+  for (var i = 0; i < history.length; i++) {
+    if (history[i].amount > maxAmount) maxAmount = history[i].amount;
+  }
+  display.textContent = maxAmount >= 2970 ? '套餐客户' : '疗程客户';
 }
 function autoParse() {}
 
@@ -3118,13 +3120,13 @@ function updateLatestPurchaseDisplay() {
   const history = getPurchaseHistory();
   const display = document.getElementById('latestPurchaseDisplay');
   if (history.length === 0) {
-    display.innerHTML = '<span style="color:#999;font-size:13px">暂无购买记录</span><span style="color:#999;font-size:12px">▼</span>';
+    display.innerHTML = '<span style="color:var(--text-secondary);font-size:13px">暂无购买记录</span><span style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--text-secondary);flex-shrink:0"></span>';
     return;
   }
   const sorted = history.slice().sort((a, b) => b.date.localeCompare(a.date));
   const latest = sorted[0];
   const p = PRODUCTS[latest.boxes] || PRODUCTS[1];
-  display.innerHTML = '<span style="color:var(--text-secondary);font-size:13px">' + latest.date + ' <span style="color:var(--text-secondary)">' + p.name + ' · ' + latest.amount + '元</span></span><span style="color:var(--text-secondary);font-size:10px">▾</span>';
+  display.innerHTML = '<span style="color:var(--text-secondary);font-size:13px">' + latest.date + ' <span style="color:var(--text-secondary)">' + p.name + ' · ' + latest.amount + '元</span></span><span style="width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--text-secondary);flex-shrink:0"></span>';
 }
 
 function renderPurchaseHistoryList() {
@@ -3211,8 +3213,7 @@ async function saveCustomer() {
       weight: document.getElementById('dlgWeight').value.trim(),
       target_weight: document.getElementById('dlgTargetWeight').value.trim(),
             purchase_history: document.getElementById('dlgPurchaseHistory').value,
-      customer_type: document.getElementById('dlgCustomerType').value,
-      remark: document.getElementById('dlgRemark').value.trim()
+                  remark: document.getElementById('dlgRemark').value.trim()
     };
   try {
     if (id) { await api('PUT', `/api/customers/${id}`, data); }
