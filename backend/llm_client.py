@@ -151,6 +151,9 @@ async def generate_script_stream(customer_info: dict,
 【历史沟通记录（含每条消息的时间）】
 {chat_history_text}
 
+{script_ref_text}
+{feedback_text}
+
 {image_text}
 {local_image_text}
 【聊天风格要求】
@@ -328,7 +331,9 @@ async def generate_script(customer_info: dict,
                           settings: dict,
                           current_time: str = "",
                           image_results: list = None,
-                          local_image_matches: list = None) -> str:
+                          local_image_matches: list = None,
+                          effective_refs: list = None,
+                          feedback_analysis: str = "") -> str:
     """
     生成销售话术
     """

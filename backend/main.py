@@ -42,6 +42,10 @@ from database import (init_db, list_customers, get_customer, create_customer,
                       batch_delete_images, batch_tag_images,
                       add_image_record, copy_image_to_category,
                       increment_image_use_count)
+from effective_scripts import (add_effective_script, list_effective_scripts,
+                               get_effective_script_stats, delete_effective_script,
+                               search_effective_scripts_by_scenario, dedup_effective_scripts,
+                               update_script_vector_status)
 from knowledge import (list_documents, get_document, add_document,
                        delete_document, search_knowledge, reindex_all,
                        get_knowledge_status, get_document_content,
@@ -1049,17 +1053,54 @@ async def api_generate_script(data: dict = Body(...)):
     if analysis_tags:
         tag_hint = "\n\n【本次分析方向】: " + "、".join(analysis_tags)
         parsed_recent = parsed_recent + tag_hint
+    # ===== 有效话术分析 + 参考 =====
+        effective_refs = []
+        feedback_analysis = ""
+        try:
+            # 分析上一条话术效果：获取最近一条 assistant 消息和客户对它的回应
+            from database import get_messages as get_customer_messages
+            all_msgs = get_customer_messages(customer_id)
+            if len(all_msgs) >= 2:
+                last_assistant = None
+                last_user = None
+                for m in reversed(all_msgs):
+                    if m['role'] == 'assistant' and last_assistant is None:
+                        last_assistant = m
+                    elif m['role'] == 'user' and last_assistant is not None and last_user is None:
+                        # 这条 user 消息可能是对 assistant 的回应
+                        last_user = m
+                        break
+                if last_assistant and last_user:
+                    feedback_analysis = f"\n【话术效果分析】\n上次发送给客户的话术: {last_assistant['content'][:100]}\n客户的回应: {last_user['content'][:100]}\n请分析客户是否正面回应了你的话术，如果是，标记为「有效」；如果是拒绝或岔开话题，标记为「无效」。"
+        
+            # 搜索有效话术作为参考
+            try:
+                from effective_scripts import search_effective_scripts_by_scenario
+                # 从 recent 中提取场景关键词
+                scenario_keywords = analysis_tags[0] if analysis_tags else ""
+                if not scenario_keywords:
+                    scenario_keywords = recent.strip()[:20]
+                refs = search_effective_scripts_by_scenario(scenario_keywords, customer.get("customer_type", ""), top_k=3)
+                if refs:
+                    effective_refs = [f"【有效话术参考】{r['content']}（有效{r['effective_count']}次）" for r in refs]
+            except Exception:
+                pass
+        except Exception:
+            pass
     
-    result = await generate_script(
-        customer_info=customer,
-        recent_messages=parsed_recent,
-        chat_history=chat_history,
-        knowledge_results=knowledge_results,
-        settings=settings,
-        current_time=current_time,
-        image_results=image_results,
-        local_image_matches=local_image_matches
-    )
+        # ===== 调用LLM生成话术 =====
+        result = await generate_script(
+                customer_info=customer,
+                recent_messages=parsed_recent,
+                chat_history=chat_history,
+                knowledge_results=knowledge_results,
+                settings=settings,
+                current_time=current_time,
+                image_results=image_results,
+                local_image_matches=local_image_matches,
+                effective_refs=effective_refs,
+                feedback_analysis=feedback_analysis
+            )
     # 解析话术中的 [生成图片: 描述] 标记，不实际生成图片
     import re
     pending_images = re.findall(r'\[生成图片:\s*(.*?)\]', result)
@@ -3385,6 +3426,37 @@ async def api_export_script_template_word(template_id: int):
         raise HTTPException(status_code=500, detail="导出Word需要安装python-docx: pip install python-docx")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
+
+
+# ===== 有效话术库 =====
+
+@app.get("/api/effective-scripts")
+async def api_list_effective_scripts(scenario: str = Query(""), customer_type: str = Query(""),
+                                      sort_by: str = Query("effective_count"), sort_order: str = Query("desc"),
+                                      limit: int = Query(100), offset: int = Query(0)):
+    """获取有效话术列表"""
+    return list_effective_scripts(scenario, customer_type, sort_by, sort_order, limit, offset)
+
+
+@app.get("/api/effective-scripts/stats")
+async def api_effective_script_stats():
+    """获取有效话术统计"""
+    return get_effective_script_stats()
+
+
+@app.delete("/api/effective-scripts/{script_id}")
+async def api_delete_effective_script(script_id: int):
+    """删除有效话术"""
+    if delete_effective_script(script_id):
+        return {"status": "ok"}
+    raise HTTPException(status_code=404, detail="话术不存在")
+
+
+@app.post("/api/effective-scripts/dedup")
+async def api_dedup_scripts():
+    """去重合并"""
+    result = dedup_effective_scripts()
+    return {"status": "ok", "result": result}
 
 
 # ===== 数据统计 API =====

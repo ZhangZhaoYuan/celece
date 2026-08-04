@@ -203,7 +203,27 @@ def init_db():
         conn.execute("ALTER TABLE customers ADD COLUMN purchase_history TEXT DEFAULT '[]'")
     except:
         pass
-    
+
+    # 有效话术库表
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS effective_scripts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    scenario TEXT DEFAULT '',
+    customer_type TEXT DEFAULT '',
+    effective_count INTEGER DEFAULT 1,
+    last_effective_at TEXT,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    vector_status TEXT DEFAULT 'pending'
+        )
+    """)
+
+    # 兼容旧表：如果已有旧表，添加新字段
+    try:
+        conn.execute("ALTER TABLE effective_scripts ADD COLUMN vector_status TEXT DEFAULT 'pending'")
+    except:
+        pass
+
     # 兼容旧表：添加 applicable_customers 字段（如果不存在）
     try:
         conn.execute("ALTER TABLE image_index ADD COLUMN applicable_customers TEXT DEFAULT ''")
