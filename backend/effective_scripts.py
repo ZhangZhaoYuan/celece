@@ -1,3 +1,11 @@
+"""有效话术库管理"""
+import json
+import sqlite3
+from datetime import datetime
+from pathlib import Path
+from database import get_db
+
+
 def add_effective_script(content, scenario="", customer_type="", effective_count=1):
     """添加有效话术，如果已存在相同内容则累加有效次数"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -95,7 +103,6 @@ def revectorize_script(script_id):
     if not script:
         return False
     try:
-        # 使用知识库的向量化函数
         from knowledge import get_embedding
         vec = get_embedding(script["content"])
         if vec:
