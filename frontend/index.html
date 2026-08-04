@@ -640,10 +640,10 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
             <div class="form-group purchase-history-group">
               <label>购买历史</label>
               <input type="hidden" id="dlgPurchaseHistory" value="[]">
-              <div class="latest-purchase" id="latestPurchaseDisplay" onclick="togglePurchaseHistory()" style="cursor:pointer;border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:8px;user-select:none;display:flex;justify-content:space-between;align-items:center">
-                <span style="color:#999;font-size:13px">暂无购买记录</span>
-                <span style="color:#999;font-size:12px">▼</span>
-              </div>
+              <div class="latest-purchase" id="latestPurchaseDisplay" onclick="togglePurchaseHistory()" style="cursor:pointer;border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:8px;user-select:none;display:flex;justify-content:space-between;align-items:center;background:var(--bg-surface);color:var(--text-primary)">
+                              <span style="color:var(--text-secondary);font-size:13px">暂无购买记录</span>
+                              <span style="color:var(--text-secondary);font-size:10px">▾</span>
+                            </div>
               <div class="purchase-history-list" id="purchaseHistoryList" style="display:none">
                 <div id="purchaseHistoryItems"></div>
                 <button class="btn btn-ghost btn-sm" onclick="showAddPurchaseForm()" style="margin-top:8px;width:100%">➕ 新增购买记录</button>
@@ -3124,7 +3124,7 @@ function updateLatestPurchaseDisplay() {
   const sorted = history.slice().sort((a, b) => b.date.localeCompare(a.date));
   const latest = sorted[0];
   const p = PRODUCTS[latest.boxes] || PRODUCTS[1];
-  display.innerHTML = '<span style="font-size:13px;color:#333">' + latest.date + ' <span style="color:#666">' + p.name + ' · ' + latest.amount + '元</span></span><span style="color:#999;font-size:12px">▼</span>';
+  display.innerHTML = '<span style="color:var(--text-secondary);font-size:13px">' + latest.date + ' <span style="color:var(--text-secondary)">' + p.name + ' · ' + latest.amount + '元</span></span><span style="color:var(--text-secondary);font-size:10px">▾</span>';
 }
 
 function renderPurchaseHistoryList() {
