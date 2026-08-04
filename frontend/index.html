@@ -238,14 +238,49 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 
       <!-- 知识库页面（隐藏） -->
       <div class="hidden" id="pageKnowledge" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0">
-        <div class="kb-toolbar">
-          <button class="btn btn-ghost btn-sm" onclick="uploadKnowledge()">📄 上传文档</button>
-          <button class="btn btn-outline btn-sm" onclick="reindexKnowledge()">🔄 重建索引</button>
-          <button class="btn btn-outline btn-sm" onclick="showPage('imageindex')" style="margin-left:auto">📷 图片索引</button>
-                    <input type="file" id="kbFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" onchange="handleUpload(event)" multiple>
-                  </div>
-        <div style="display:flex;flex:1;overflow:hidden"><div id="kbList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div><div id="kbDetail" style="flex:1;overflow-y:auto;padding:20px 24px"><div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个文档查看详情</div></div></div>
-      </div>
+              <div class="kb-toolbar">
+                <button class="btn btn-ghost btn-sm" id="kbTabDocs" onclick="switchKbTab('docs')" style="font-weight:600">📄 文档</button>
+                <button class="btn btn-ghost btn-sm" id="kbTabScripts" onclick="switchKbTab('scripts')">💡 有效话术</button>
+                <button class="btn btn-ghost btn-sm" id="kbTabStats" onclick="switchKbTab('stats')">📊 统计</button>
+                <span style="flex:1"></span>
+                <button class="btn btn-ghost btn-sm" id="kbUploadBtn" onclick="uploadKnowledge()" style="display:none">📄 上传文档</button>
+                <button class="btn btn-outline btn-sm" id="kbReindexBtn" onclick="reindexKnowledge()" style="display:none">🔄 重建索引</button>
+                <button class="btn btn-outline btn-sm" onclick="showPage('imageindex')" style="margin-left:auto">📷 图片索引</button>
+                <input type="file" id="kbFileInput" accept=".txt,.docx,.pdf,.md" style="display:none" onchange="handleUpload(event)" multiple>
+              </div>
+              <!-- 文档标签 -->
+              <div id="kbDocsView" style="display:flex;flex:1;overflow:hidden">
+                <div id="kbList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div>
+                <div id="kbDetail" style="flex:1;overflow-y:auto;padding:20px 24px"><div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个文档查看详情</div></div>
+              </div>
+              <!-- 有效话术标签 -->
+              <div id="kbScriptsView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+                <div style="display:flex;gap:8px;padding:8px 12px;align-items:center;border-bottom:1px solid var(--border)">
+                  <select id="scriptScenarioFilter" onchange="loadEffectiveScripts()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:13px;outline:none">
+                    <option value="">全部场景</option>
+                    <option value="排油跟进">排油跟进</option>
+                    <option value="复购推荐">复购推荐</option>
+                    <option value="效果确认">效果确认</option>
+                    <option value="价格异议">价格异议</option>
+                    <option value="异议处理">异议处理</option>
+                    <option value="逼单成交">逼单成交</option>
+                  </select>
+                  <select id="scriptTypeFilter" onchange="loadEffectiveScripts()" style="padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:13px;outline:none">
+                    <option value="">全部客户类型</option>
+                    <option value="CID客户">CID客户</option>
+                    <option value="疗程客户">疗程客户</option>
+                    <option value="套餐客户">套餐客户</option>
+                  </select>
+                  <button class="btn btn-outline btn-sm" onclick="dedupScripts()">🔄 去重合并</button>
+                  <span id="scriptCount" style="font-size:12px;color:var(--text-secondary);margin-left:auto"></span>
+                </div>
+                <div id="effectiveScriptList" style="flex:1;overflow-y:auto;padding:4px 0"></div>
+              </div>
+              <!-- 统计标签 -->
+              <div id="kbStatsView" style="display:none;flex:1;overflow:hidden;flex-direction:column;padding:20px">
+                <div id="effectiveScriptStats" style="font-size:14px;color:var(--text-secondary)">加载中...</div>
+              </div>
+            </div>
 
       <!-- 图片索引卡片 -->
       <div class="hidden" id="pageImageIndex" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
@@ -2628,7 +2663,126 @@ async function onChangeModelType(type) {
   let _modelStatusCache = null;
 
   // 进入设置页时加载模型配置（由按钮onclick触发）
-    // ===== 知识库 =====
+    // ===== 有效话术库 =====
+let _currentScriptTab = 'docs';
+
+function switchKbTab(tab) {
+  _currentScriptTab = tab;
+  document.getElementById('kbDocsView').style.display = tab === 'docs' ? 'flex' : 'none';
+  document.getElementById('kbScriptsView').style.display = tab === 'scripts' ? 'flex' : 'none';
+  document.getElementById('kbStatsView').style.display = tab === 'stats' ? 'flex' : 'none';
+  document.getElementById('kbUploadBtn').style.display = tab === 'docs' ? 'inline-flex' : 'none';
+  document.getElementById('kbReindexBtn').style.display = tab === 'docs' ? 'inline-flex' : 'none';
+  document.querySelectorAll('#kbTabDocs, #kbTabScripts, #kbTabStats').forEach(function(el) { el.style.fontWeight = 'normal'; });
+  document.getElementById('kbTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.fontWeight = '600';
+  if (tab === 'scripts') loadEffectiveScripts();
+  if (tab === 'stats') loadScriptStats();
+}
+
+async function loadEffectiveScripts() {
+  const scenario = document.getElementById('scriptScenarioFilter').value;
+  const customerType = document.getElementById('scriptTypeFilter').value;
+  const container = document.getElementById('effectiveScriptList');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>';
+  try {
+    var params = '?limit=200&sort_by=effective_count&sort_order=desc';
+    if (scenario) params += '&scenario=' + encodeURIComponent(scenario);
+    if (customerType) params += '&customer_type=' + encodeURIComponent(customerType);
+    const r = await api('GET', '/api/effective-scripts' + params);
+    const scripts = r.scripts || [];
+    document.getElementById('scriptCount').textContent = '共 ' + (r.total || 0) + ' 条';
+    if (scripts.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)">暂无有效话术，使用小赛助手生成话术并发送给客户后，系统会自动分析效果并收集</div>';
+      return;
+    }
+    container.innerHTML = scripts.map(function(s) {
+      var statusIcon = s.vector_status === 'done' ? '✅' : s.vector_status === 'failed' ? '⚠️' : '⏳';
+      var statusTitle = s.vector_status === 'done' ? '已向量化' : s.vector_status === 'failed' ? '向量化失败' : '待处理';
+      var scenarioLabel = s.scenario ? '<span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:10px;font-size:11px">' + escapeHtml(s.scenario) + '</span>' : '';
+      var typeLabel = s.customer_type ? '<span style="background:#f3e5f5;color:#7b1fa2;padding:2px 8px;border-radius:10px;font-size:11px">' + escapeHtml(s.customer_type) + '</span>' : '';
+      return '<div style="border:1px solid var(--border-light);border-radius:8px;padding:10px 14px;margin:6px 10px;background:var(--bg-surface)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+        '<div style="flex:1;font-size:13px;line-height:1.5;word-break:break-word">' + escapeHtml(s.content) + '</div>' +
+        '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:40px">' +
+        '<span title="' + statusTitle + '" style="font-size:16px;cursor:help">' + statusIcon + '</span>' +
+        '<span style="font-size:13px;font-weight:700;color:var(--primary)">' + s.effective_count + '次</span>' +
+        '<button onclick="deleteScript(' + s.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:2px">🗑️</button>' +
+        '</div></div>' +
+        '<div style="display:flex;gap:6px;margin-top:6px">' + scenarioLabel + typeLabel +
+        '<span style="font-size:11px;color:var(--text-secondary)">' + (s.last_effective_at || s.created_at || '').slice(0,10) + '</span>' +
+        (s.vector_status === 'failed' ? '<button onclick="revectorizeScript(' + s.id + ')" style="background:none;border:none;color:#f57c00;cursor:pointer;font-size:11px;padding:0">重新向量化</button>' : '') +
+        '</div></div>';
+    }).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function loadScriptStats() {
+  const container = document.getElementById('effectiveScriptStats');
+  try {
+    const r = await api('GET', '/api/effective-scripts/stats');
+    var html = '<div style="max-width:600px;margin:0 auto">';
+    html += '<h3 style="margin:0 0 16px;font-size:18px">📊 有效话术统计</h3>';
+    html += '<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">';
+    html += '<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:8px;padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:24px;font-weight:700;color:var(--primary)">' + r.total + '</div><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">总话术数</div></div>';
+    html += '<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:8px;padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:24px;font-weight:700;color:#2e7d32">' + r.total_effective + '</div><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">累计有效次数</div></div>';
+    html += '<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:8px;padding:14px 20px;flex:1;min-width:120px;text-align:center"><div style="font-size:24px;font-weight:700;color:' + (r.vector_failed > 0 ? '#f57c00' : '#2e7d32') + '">' + r.vector_failed + '</div><div style="font-size:12px;color:var(--text-secondary);margin-top:4px">向量化失败</div></div>';
+    html += '</div>';
+    if (r.by_scenario && r.by_scenario.length) {
+      html += '<h4 style="margin:16px 0 8px;font-size:14px">按场景分布</h4>';
+      html += '<div style="display:flex;flex-direction:column;gap:6px">';
+      r.by_scenario.forEach(function(s) {
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:6px">' +
+          '<span>' + escapeHtml(s.scenario || '未分类') + '</span>' +
+          '<span style="font-weight:600;color:var(--primary)">' + s.count + '条 / 有效' + s.total_effective + '次</span></div>';
+      });
+      html += '</div>';
+    }
+    if (r.by_customer_type && r.by_customer_type.length) {
+      html += '<h4 style="margin:16px 0 8px;font-size:14px">按客户类型分布</h4>';
+      html += '<div style="display:flex;flex-direction:column;gap:6px">';
+      r.by_customer_type.forEach(function(s) {
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bg);border:1px solid var(--border-light);border-radius:6px">' +
+          '<span style="color:' + (s.customer_type === '套餐客户' ? '#ff9500' : s.customer_type === '疗程客户' ? '#34c759' : '#0071e3') + ';font-weight:600">' + escapeHtml(s.customer_type || '未分类') + '</span>' +
+          '<span style="font-weight:600;color:var(--primary)">' + s.count + '条 / 有效' + s.total_effective + '次</span></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+async function deleteScript(id) {
+  if (!await showConfirm('确定删除这条有效话术？', '删除确认')) return;
+  try {
+    await api('DELETE', '/api/effective-scripts/' + id);
+    showToast('已删除');
+    loadEffectiveScripts();
+  } catch(e) { showToast('删除失败'); }
+}
+
+async function dedupScripts() {
+  if (!await showConfirm('确定去重合并相似话术？合并后不可撤销。', '去重确认')) return;
+  try {
+    const r = await api('POST', '/api/effective-scripts/dedup');
+    showToast('✅ 合并了 ' + r.result.merged + ' 条相似话术，剩余 ' + r.result.remaining + ' 条');
+    loadEffectiveScripts();
+  } catch(e) { showToast('去重失败: ' + e.message); }
+}
+
+async function revectorizeScript(id) {
+  try {
+    await api('POST', '/api/effective-scripts/' + id + '/revectorize');
+    showToast('已重新向量化');
+    loadEffectiveScripts();
+  } catch(e) { showToast('向量化失败'); }
+}
+
+// ===== 知识库 =====
 async function loadKnowledge() {
   try {
     const r = await api('GET', '/api/knowledge/documents');

@@ -87,6 +87,28 @@ def update_script_vector_status(script_id, status):
     conn.close()
 
 
+def revectorize_script(script_id):
+    """重新向量化单条话术"""
+    conn = get_db()
+    script = conn.execute("SELECT * FROM effective_scripts WHERE id=?", (script_id,)).fetchone()
+    conn.close()
+    if not script:
+        return False
+    try:
+        # 使用知识库的向量化函数
+        from knowledge import get_embedding
+        vec = get_embedding(script["content"])
+        if vec:
+            update_script_vector_status(script_id, "done")
+            return True
+        else:
+            update_script_vector_status(script_id, "failed")
+            return False
+    except Exception:
+        update_script_vector_status(script_id, "failed")
+        return False
+
+
 def search_effective_scripts_by_scenario(scenario, customer_type="", top_k=5):
     """搜索相似场景的有效话术"""
     conn = get_db()

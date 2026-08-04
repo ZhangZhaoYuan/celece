@@ -45,7 +45,7 @@ from database import (init_db, list_customers, get_customer, create_customer,
 from effective_scripts import (add_effective_script, list_effective_scripts,
                                get_effective_script_stats, delete_effective_script,
                                search_effective_scripts_by_scenario, dedup_effective_scripts,
-                               update_script_vector_status)
+                               update_script_vector_status, revectorize_script)
 from knowledge import (list_documents, get_document, add_document,
                        delete_document, search_knowledge, reindex_all,
                        get_knowledge_status, get_document_content,
