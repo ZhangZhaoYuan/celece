@@ -636,8 +636,46 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
         <div class="form-group"><label>体重(斤)</label><input type="text" id="dlgWeight"></div>
         <div class="form-group"><label>目标体重</label><input type="text" id="dlgTargetWeight"></div>
       </div>
-      <div class="form-group"><label>购买记录</label><input type="text" id="dlgPurchase" placeholder="例如: 60mg体验装" oninput="autoCalcCustomerType()"></div>
-      <div class="form-group"><label>客户类型</label><select id="dlgCustomerType"><option value="">自动</option><option value="cid">CID客户（未购买）</option><option value="treatment">疗程客户（&lt;2970元）</option><option value="package">套餐客户（≥2970元）</option></select></div>
+            <!-- 购买历史组件 -->
+            <div class="form-group purchase-history-group">
+              <label>购买历史</label>
+              <input type="hidden" id="dlgPurchaseHistory" value="[]">
+              <div class="latest-purchase" id="latestPurchaseDisplay" onclick="togglePurchaseHistory()" style="cursor:pointer;border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin-bottom:8px;user-select:none;display:flex;justify-content:space-between;align-items:center">
+                <span style="color:#999;font-size:13px">暂无购买记录</span>
+                <span style="color:#999;font-size:12px">▼</span>
+              </div>
+              <div class="purchase-history-list" id="purchaseHistoryList" style="display:none">
+                <div id="purchaseHistoryItems"></div>
+                <button class="btn btn-ghost btn-sm" onclick="showAddPurchaseForm()" style="margin-top:8px;width:100%">➕ 新增购买记录</button>
+              </div>
+              <div class="add-purchase-form" id="addPurchaseForm" style="display:none;margin-top:8px">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  <div class="form-group" style="margin:0"><label>购买日期</label><input type="date" id="newPurchaseDate" style="width:100%"></div>
+                  <div class="form-group" style="margin:0"><label>选择商品</label>
+                    <select id="newPurchaseBoxes" onchange="updatePurchaseFormPreview()" style="width:100%">
+                      <option value="1">1盒（6粒）- 198元</option>
+                      <option value="2">2盒（12粒）- 396元</option>
+                      <option value="3">3盒（18粒）- 594元</option>
+                      <option value="4">4盒（24粒）- 792元</option>
+                      <option value="5">5盒（30粒）- 990元</option>
+                      <option value="6">6盒（36粒）- 990元</option>
+                      <option value="11">11盒（66粒）- 1980元</option>
+                      <option value="13">13盒（78粒）- 1980元</option>
+                      <option value="20">20盒（120粒）- 2970元</option>
+                      <option value="30">30盒（180粒）- 3960元</option>
+                      <option value="40">40盒（240粒）- 4950元</option>
+                      <option value="50">50盒（300粒）- 5940元</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="purchase-form-preview" id="purchaseFormPreview" style="font-size:12px;color:#666;margin:8px 0">6粒，198元</div>
+                <div style="display:flex;gap:8px">
+                  <button class="btn btn-ghost" onclick="addPurchaseRecord()" style="flex:1">✅ 保存</button>
+                  <button class="btn btn-outline" onclick="cancelAddPurchase()" style="flex:1">取消</button>
+                </div>
+              </div>
+            </div>
+            <div class="form-group"><label>客户类型</label><select id="dlgCustomerType"><option value="">自动</option><option value="cid">CID客户（未购买）</option><option value="treatment">疗程客户（<2970元）</option><option value="package">套餐客户（≥2970元）</option></select></div>
       <div class="form-group"><label>备注</label><textarea id="dlgRemark" rows="3"></textarea></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
         <button class="btn btn-outline" onclick="closeModal('customerDialog')">取消</button>
@@ -878,6 +916,18 @@ function renderCustomerItem(c) {
     const color = silentDays > 7 ? '#e53935' : '#f57c00';
     badgeHtml = '<span style="margin-left:6px;font-size:10px;font-weight:700;color:' + color + '">' + silentDays + '天</span>';
   }
+  var purchaseHtml = '';
+    if (c.purchase_history) {
+      try {
+        var history = JSON.parse(c.purchase_history);
+        if (history.length > 0) {
+          var sorted = history.slice().sort(function(a,b) { return b.date.localeCompare(a.date); });
+          var latest = sorted[0];
+          var p = PRODUCTS[latest.boxes] || PRODUCTS[1];
+          purchaseHtml = p.name + ' · ' + latest.amount + '元 · ' + latest.date;
+        }
+      } catch(e) {}
+    }
   return `<div class="sidebar-item ${c.id === selectedCustomerId ? 'active':''}" data-cid="${c.id}" onclick="selectCustomer(${c.id})">
     <div class="top-row">
       <div class="name">${escapeHtml(c.name)}${c.title ? ' ('+escapeHtml(c.title)+')' : ''}${badgeHtml}</div>
@@ -886,7 +936,7 @@ function renderCustomerItem(c) {
         <button class="del-icon" onclick="event.stopPropagation();deleteCustomer(${c.id})" title="删除">🗑️</button>
       </div>
     </div>
-    <div class="preview">${escapeHtml(c.purchase || '')}${c.remark ? ' · '+escapeHtml(c.remark.slice(0,20)): ''}</div>
+    <div class="preview">${escapeHtml(purchaseHtml)}${c.remark ? ' · '+escapeHtml(c.remark.slice(0,20)): ''}</div>
   </div>`;
 }
 function renderCustomerList() {
@@ -968,10 +1018,12 @@ async function editCustomer(id) {
     document.getElementById('dlgHeight').value = c.height || '';
     document.getElementById('dlgWeight').value = c.weight || '';
     document.getElementById('dlgTargetWeight').value = c.target_weight || '';
-    document.getElementById('dlgPurchase').value = c.purchase || '';
-    document.getElementById('dlgCustomerType').value = c.customer_type || '';
-    if (!c.customer_type) autoCalcCustomerType();
-    document.getElementById('dlgRemark').value = c.remark || '';
+        document.getElementById('dlgCustomerType').value = c.customer_type || '';
+        if (!c.customer_type) autoCalcCustomerType();
+        document.getElementById('dlgRemark').value = c.remark || '';
+        document.getElementById('dlgPurchaseHistory').value = c.purchase_history || '[]';
+    updateLatestPurchaseDisplay();
+    renderPurchaseHistoryList();
     showModal('customerDialog');
   } catch(e) { showToast('加载客户信息失败'); }
 }
@@ -3018,26 +3070,122 @@ function showAddCustomer() {
   document.getElementById('dlgHeight').value = '';
   document.getElementById('dlgWeight').value = '';
   document.getElementById('dlgTargetWeight').value = '';
-  document.getElementById('dlgPurchase').value = '';
-  document.getElementById('dlgCustomerType').value = 'cid';
-  document.getElementById('dlgRemark').value = '';
+    document.getElementById('dlgPurchaseHistory').value = '[]';
+    document.getElementById('dlgCustomerType').value = 'cid';
+    document.getElementById('dlgRemark').value = '';
+  updateLatestPurchaseDisplay();
+  renderPurchaseHistoryList();
   showModal('customerDialog');
 }
 function autoCalcCustomerType() {
-  const purchase = document.getElementById('dlgPurchase').value.trim();
+  const history = getPurchaseHistory();
   const sel = document.getElementById('dlgCustomerType');
-  if (!purchase) {
+  if (history.length === 0) {
     sel.value = 'cid';
     return;
   }
-  // 计算总金额
-  const total = purchase.split('+').reduce(function(sum, p) {
-    const v = parseFloat(p.trim());
-    return sum + (isNaN(v) ? 0 : v);
-  }, 0);
-  sel.value = total >= 2970 ? 'package' : 'treatment';
+  // 取所有购买记录中的最大金额
+  const maxAmount = Math.max.apply(null, history.map(function(r) { return r.amount || 0; }));
+  sel.value = maxAmount >= 2970 ? 'package' : 'treatment';
 }
 function autoParse() {}
+
+// ===== 购买历史管理 =====
+const PRODUCTS = {
+  1: { pills: 6, amount: 198, name: '1盒（6粒）' },
+  2: { pills: 12, amount: 396, name: '2盒（12粒）' },
+  3: { pills: 18, amount: 594, name: '3盒（18粒）' },
+  4: { pills: 24, amount: 792, name: '4盒（24粒）' },
+  5: { pills: 30, amount: 990, name: '5盒（30粒）' },
+  6: { pills: 36, amount: 990, name: '6盒（36粒）' },
+  11: { pills: 66, amount: 1980, name: '11盒（66粒）' },
+  13: { pills: 78, amount: 1980, name: '13盒（78粒）' },
+  20: { pills: 120, amount: 2970, name: '20盒（120粒）' },
+  30: { pills: 180, amount: 3960, name: '30盒（180粒）' },
+  40: { pills: 240, amount: 4950, name: '40盒（240粒）' },
+  50: { pills: 300, amount: 5940, name: '50盒（300粒）' }
+};
+
+function getPurchaseHistory() {
+  try {
+    return JSON.parse(document.getElementById('dlgPurchaseHistory').value || '[]');
+  } catch(e) {
+    return [];
+  }
+}
+
+function updateLatestPurchaseDisplay() {
+  const history = getPurchaseHistory();
+  const display = document.getElementById('latestPurchaseDisplay');
+  if (history.length === 0) {
+    display.innerHTML = '<span style="color:#999;font-size:13px">暂无购买记录</span><span style="color:#999;font-size:12px">▼</span>';
+    return;
+  }
+  const sorted = history.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const latest = sorted[0];
+  const p = PRODUCTS[latest.boxes] || PRODUCTS[1];
+  display.innerHTML = '<span style="font-size:13px;color:#333">' + latest.date + ' <span style="color:#666">' + p.name + ' · ' + latest.amount + '元</span></span><span style="color:#999;font-size:12px">▼</span>';
+}
+
+function renderPurchaseHistoryList() {
+  const history = getPurchaseHistory();
+  const container = document.getElementById('purchaseHistoryItems');
+  if (history.length === 0) {
+    container.innerHTML = '<div style="font-size:12px;color:#999;padding:8px">暂无购买记录</div>';
+    return;
+  }
+  const sorted = history.slice().sort((a, b) => b.date.localeCompare(a.date));
+  container.innerHTML = sorted.map(function(r) {
+    const p = PRODUCTS[r.boxes] || PRODUCTS[1];
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:#f9f9f9;border-radius:4px;margin-bottom:4px">' +
+      '<span style="font-size:13px"><span style="color:#333">' + r.date + '</span><span style="color:#666;margin-left:8px">' + p.name + ' · ' + r.amount + '元</span></span>' +
+      '<button onclick="removePurchaseRecord(' + history.indexOf(r) + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:16px;padding:4px">🗑️</button></div>';
+  }).join('');
+}
+
+function togglePurchaseHistory() {
+  var list = document.getElementById('purchaseHistoryList');
+  list.style.display = list.style.display === 'none' ? 'block' : 'none';
+}
+
+function showAddPurchaseForm() {
+  document.getElementById('addPurchaseForm').style.display = 'block';
+  document.getElementById('newPurchaseDate').value = new Date().toISOString().slice(0, 10);
+  updatePurchaseFormPreview();
+}
+
+function cancelAddPurchase() {
+  document.getElementById('addPurchaseForm').style.display = 'none';
+}
+
+function updatePurchaseFormPreview() {
+  var boxes = parseInt(document.getElementById('newPurchaseBoxes').value);
+  var p = PRODUCTS[boxes] || PRODUCTS[1];
+  document.getElementById('purchaseFormPreview').textContent = p.pills + '粒，' + p.amount + '元';
+}
+
+function addPurchaseRecord() {
+  var date = document.getElementById('newPurchaseDate').value;
+  var boxes = parseInt(document.getElementById('newPurchaseBoxes').value);
+  if (!date) { showToast('请选择购买日期'); return; }
+  var p = PRODUCTS[boxes] || PRODUCTS[1];
+  var history = getPurchaseHistory();
+  history.push({ date: date, boxes: boxes, pills: p.pills, amount: p.amount });
+  history.sort(function(a, b) { return a.date.localeCompare(b.date); });
+  document.getElementById('dlgPurchaseHistory').value = JSON.stringify(history);
+  updateLatestPurchaseDisplay();
+  renderPurchaseHistoryList();
+  autoCalcCustomerType();
+  cancelAddPurchase();
+}
+
+function removePurchaseRecord(idx) {
+  var history = getPurchaseHistory();
+  history.splice(idx, 1);
+  document.getElementById('dlgPurchaseHistory').value = JSON.stringify(history);
+  updateLatestPurchaseDisplay();
+  renderPurchaseHistoryList();
+}
 async function parseCustomerText() {
   const text = document.getElementById('smartParseInput').value.trim();
   if (!text) return;
@@ -3057,15 +3205,15 @@ async function saveCustomer() {
   if (!name) { showToast('姓名不能为空'); return; }
   const id = document.getElementById('editCustomerId').value;
   const data = {
-    name, title: document.getElementById('dlgTitle').value.trim(),
-    age: document.getElementById('dlgAge').value.trim(),
-    height: document.getElementById('dlgHeight').value.trim(),
-    weight: document.getElementById('dlgWeight').value.trim(),
-    target_weight: document.getElementById('dlgTargetWeight').value.trim(),
-    purchase: document.getElementById('dlgPurchase').value.trim(),
-    customer_type: document.getElementById('dlgCustomerType').value,
-    remark: document.getElementById('dlgRemark').value.trim()
-  };
+      name, title: document.getElementById('dlgTitle').value.trim(),
+      age: document.getElementById('dlgAge').value.trim(),
+      height: document.getElementById('dlgHeight').value.trim(),
+      weight: document.getElementById('dlgWeight').value.trim(),
+      target_weight: document.getElementById('dlgTargetWeight').value.trim(),
+            purchase_history: document.getElementById('dlgPurchaseHistory').value,
+      customer_type: document.getElementById('dlgCustomerType').value,
+      remark: document.getElementById('dlgRemark').value.trim()
+    };
   try {
     if (id) { await api('PUT', `/api/customers/${id}`, data); }
     else { await api('POST', '/api/customers', data); }

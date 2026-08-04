@@ -384,17 +384,25 @@ def update_customer(customer_id, name, title="", age="", height="", weight="", t
     return dict(customer) if customer else None
 
 
-# 固定价格体系
-PRODUCT_CYCLES = {
-    4: {"days": 14, "pills": 120, "amount": 2970, "name": "4疗程（120粒）"},
-    6: {"days": 21, "pills": 180, "amount": 3960, "name": "6疗程（180粒）"},
-    8: {"days": 30, "pills": 240, "amount": 4950, "name": "8疗程（240粒）"},
-    10: {"days": 45, "pills": 300, "amount": 5940, "name": "10疗程（300粒）"},
+# 固定价格体系（按盒数）
+PRODUCTS = {
+    1: {"pills": 6, "amount": 198, "name": "1盒（6粒）"},
+    2: {"pills": 12, "amount": 396, "name": "2盒（12粒）"},
+    3: {"pills": 18, "amount": 594, "name": "3盒（18粒）"},
+    4: {"pills": 24, "amount": 792, "name": "4盒（24粒）"},
+    5: {"pills": 30, "amount": 990, "name": "5盒（30粒）"},
+    6: {"pills": 36, "amount": 990, "name": "6盒（36粒）"},
+    11: {"pills": 66, "amount": 1980, "name": "11盒（66粒）"},
+    13: {"pills": 78, "amount": 1980, "name": "13盒（78粒）"},
+    20: {"pills": 120, "amount": 2970, "name": "20盒（120粒）"},
+    30: {"pills": 180, "amount": 3960, "name": "30盒（180粒）"},
+    40: {"pills": 240, "amount": 4950, "name": "40盒（240粒）"},
+    50: {"pills": 300, "amount": 5940, "name": "50盒（300粒）"},
 }
 
 
 def get_purchase_stats(purchase_history_json):
-    """解析购买历史，返回最新购买信息和下次复购日期"""
+    """解析购买历史，返回最新购买信息和复购相关数据"""
     if not purchase_history_json:
         return None
     try:
@@ -409,29 +417,16 @@ def get_purchase_stats(purchase_history_json):
     sorted_history = sorted(history, key=lambda x: x.get('date', ''), reverse=True)
     latest = sorted_history[0]
     
-    # 计算下次复购日期
-    next_rebuy = None
-    days_remaining = None
-    if latest.get('date') and latest.get('cycles'):
-        cycle = PRODUCT_CYCLES.get(latest['cycles'], PRODUCT_CYCLES[4])
-        try:
-            purchase_date = datetime.strptime(latest['date'], "%Y-%m-%d")
-            rebuy_date = purchase_date + timedelta(days=cycle['days']-3)
-            next_rebuy = rebuy_date.strftime("%Y-%m-%d")
-            days_remaining = max(0, (rebuy_date - datetime.now()).days)
-        except:
-            pass
-    
     # 计算累计信息
     total_purchases = len(history)
     total_amount = sum(r.get('amount', 0) for r in history)
+    max_amount = max(r.get('amount', 0) for r in history)
     
     return {
         "latest": latest,
-        "next_rebuy": next_rebuy,
-        "days_remaining": days_remaining,
         "total_purchases": total_purchases,
         "total_amount": total_amount,
+        "max_amount": max_amount,
         "history": sorted_history
     }
 
@@ -668,23 +663,23 @@ def dedup_recent_messages(recent_messages: str, chat_history: str) -> str:
 
 
 def classify_customer(customer):
-    """根据purchase值自动分类客户（优先使用手动设置的customer_type）"""
+    """根据purchase_history值自动分类客户（优先使用手动设置的customer_type）"""
     manual = customer.get('customer_type', '') or ''
     if manual and manual.strip() and manual in ('cid', 'treatment', 'package'):
         return manual
-    purchase = customer.get('purchase', '') or ''
-    if not purchase or not purchase.strip():
-        return 'cid'
+    # 根据购买历史判断
+    ph = customer.get('purchase_history', '') or '[]'
     try:
-        # 支持 + 和 , 作为分隔符
-        nums = [float(x.strip()) for x in purchase.replace('，', ',').replace('+', ',').split(',') if x.strip()]
-        total = sum(nums)
-        if total >= 2970:
-            return 'package'
-        else:
-            return 'treatment'
-    except (ValueError, TypeError):
+        history = json.loads(ph)
+    except (json.JSONDecodeError, TypeError):
+        history = []
+    if not history:
         return 'cid'
+    max_amount = max(r.get('amount', 0) for r in history)
+    if max_amount >= 2970:
+        return 'package'
+    else:
+        return 'treatment'
 
 
 def group_customers():
