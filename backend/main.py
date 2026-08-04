@@ -582,6 +582,7 @@ async def api_create_customer(data: dict = Body(...)):
         weight=data.get("weight", ""),
         target_weight=data.get("target_weight", ""),
         purchase=data.get("purchase", ""),
+        purchase_history=data.get("purchase_history", "[]"),
         customer_type=data.get("customer_type", ""),
         remark=data.get("remark", "")
     )
@@ -633,6 +634,7 @@ async def api_batch_create_customers(data: dict = Body(...)):
                     weight=c.get("weight", ""),
                     target_weight=c.get("target_weight", ""),
                     purchase=c.get("purchase", ""),
+                    purchase_history=c.get("purchase_history", "[]"),
                     customer_type=c.get("customer_type", ""),
                     remark=c.get("remark", "")
                 )
@@ -812,7 +814,6 @@ async def api_update_customer(customer_id: int, data: dict = Body(...)):
     if not customer:
         raise HTTPException(status_code=404, detail="客户不存在")
     return {"customer": customer}
-
 
 @app.delete("/api/customers/{customer_id}")
 async def api_delete_customer(customer_id: int):

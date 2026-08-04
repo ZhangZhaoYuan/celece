@@ -134,6 +134,8 @@ def init_db():
     weight TEXT,
     target_weight TEXT,
     purchase TEXT,
+    purchase_history TEXT DEFAULT '[]',
+    customer_type TEXT,
     remark TEXT,
     created_at TEXT,
     updated_at TEXT
@@ -195,6 +197,12 @@ def init_db():
     updated_at TEXT DEFAULT (datetime('now','localtime'))
         )
     """)
+    
+    # 兼容旧表：添加 purchase_history 字段（如果不存在）
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN purchase_history TEXT DEFAULT '[]'")
+    except:
+        pass
     
     # 兼容旧表：添加 applicable_customers 字段（如果不存在）
     try:
@@ -346,13 +354,13 @@ def get_customer(customer_id):
     return dict(customer) if customer else None
 
 
-def create_customer(name, title="", age="", height="", weight="", target_weight="", purchase="", customer_type="", remark=""):
+def create_customer(name, title="", age="", height="", weight="", target_weight="", purchase="", customer_type="", remark="", purchase_history="[]"):
     """创建新客户"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO customers (name, title, age, height, weight, target_weight, purchase, customer_type, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (name, title, age, height, weight, target_weight, purchase, customer_type, remark, now, now)
+        "INSERT INTO customers (name, title, age, height, weight, target_weight, purchase, purchase_history, customer_type, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, title, age, height, weight, target_weight, purchase, purchase_history, customer_type, remark, now, now)
     )
     customer_id = cursor.lastrowid
     conn.commit()
@@ -360,13 +368,13 @@ def create_customer(name, title="", age="", height="", weight="", target_weight=
     return {"id": customer_id, "name": name}
 
 
-def update_customer(customer_id, name, title="", age="", height="", weight="", target_weight="", purchase="", customer_type="", remark=""):
+def update_customer(customer_id, name, title="", age="", height="", weight="", target_weight="", purchase="", customer_type="", remark="", purchase_history="[]"):
     """更新客户信息，返回更新后的客户"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db()
     conn.execute(
-        "UPDATE customers SET name=?, title=?, age=?, height=?, weight=?, target_weight=?, purchase=?, customer_type=?, remark=?, updated_at=? WHERE id=?",
-        (name, title, age, height, weight, target_weight, purchase, customer_type, remark, now, customer_id)
+        "UPDATE customers SET name=?, title=?, age=?, height=?, weight=?, target_weight=?, purchase=?, purchase_history=?, customer_type=?, remark=?, updated_at=? WHERE id=?",
+        (name, title, age, height, weight, target_weight, purchase, purchase_history, customer_type, remark, now, customer_id)
     )
     conn.commit()
     # 返回更新后的客户
@@ -374,6 +382,58 @@ def update_customer(customer_id, name, title="", age="", height="", weight="", t
     customer = cursor.fetchone()
     conn.close()
     return dict(customer) if customer else None
+
+
+# 固定价格体系
+PRODUCT_CYCLES = {
+    4: {"days": 14, "pills": 120, "amount": 2970, "name": "4疗程（120粒）"},
+    6: {"days": 21, "pills": 180, "amount": 3960, "name": "6疗程（180粒）"},
+    8: {"days": 30, "pills": 240, "amount": 4950, "name": "8疗程（240粒）"},
+    10: {"days": 45, "pills": 300, "amount": 5940, "name": "10疗程（300粒）"},
+}
+
+
+def get_purchase_stats(purchase_history_json):
+    """解析购买历史，返回最新购买信息和下次复购日期"""
+    if not purchase_history_json:
+        return None
+    try:
+        history = json.loads(purchase_history_json)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    
+    if not history or len(history) == 0:
+        return None
+    
+    # 按日期排序，取最新一条
+    sorted_history = sorted(history, key=lambda x: x.get('date', ''), reverse=True)
+    latest = sorted_history[0]
+    
+    # 计算下次复购日期
+    next_rebuy = None
+    days_remaining = None
+    if latest.get('date') and latest.get('cycles'):
+        cycle = PRODUCT_CYCLES.get(latest['cycles'], PRODUCT_CYCLES[4])
+        try:
+            purchase_date = datetime.strptime(latest['date'], "%Y-%m-%d")
+            rebuy_date = purchase_date + timedelta(days=cycle['days']-3)
+            next_rebuy = rebuy_date.strftime("%Y-%m-%d")
+            days_remaining = max(0, (rebuy_date - datetime.now()).days)
+        except:
+            pass
+    
+    # 计算累计信息
+    total_purchases = len(history)
+    total_amount = sum(r.get('amount', 0) for r in history)
+    
+    return {
+        "latest": latest,
+        "next_rebuy": next_rebuy,
+        "days_remaining": days_remaining,
+        "total_purchases": total_purchases,
+        "total_amount": total_amount,
+        "history": sorted_history
+    }
 
 
 def delete_customer(customer_id):
@@ -463,8 +523,8 @@ def import_data(data):
     conn = get_db()
     for customer in data.get("customers", []):
         conn.execute(
-            "INSERT OR REPLACE INTO customers (id, name, title, age, height, weight, target_weight, purchase, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (customer["id"], customer["name"], customer.get("title", ""), customer.get("age", ""), customer.get("height", ""), customer.get("weight", ""), customer.get("target_weight", ""), customer.get("purchase", ""), customer.get("remark", ""), customer.get("created_at", ""), customer.get("updated_at", ""))
+            "INSERT OR REPLACE INTO customers (id, name, title, age, height, weight, target_weight, purchase, purchase_history, remark, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (customer["id"], customer["name"], customer.get("title", ""), customer.get("age", ""), customer.get("height", ""), customer.get("weight", ""), customer.get("target_weight", ""), customer.get("purchase", ""), customer.get("purchase_history", "[]"), customer.get("remark", ""), customer.get("created_at", ""), customer.get("updated_at", ""))
         )
     conn.commit()
     conn.close()
