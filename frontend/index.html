@@ -675,7 +675,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
                 </div>
               </div>
             </div>
-            <div class="form-group" style="margin-bottom:4px"><label>客户类型</label><span id="dlgCustomerTypeDisplay" style="color:var(--text-primary);font-size:14px">CID客户</span></div>
+            <div class="form-group" style="margin-bottom:4px;display:flex;align-items:center;gap:8px"><label style="margin:0;white-space:nowrap">客户类型</label><span id="dlgCustomerTypeDisplay" style="font-size:14px;font-weight:600;color:#0071e3">CID客户</span></div>
       <div class="form-group"><label>备注</label><textarea id="dlgRemark" rows="3"></textarea></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
         <button class="btn btn-outline" onclick="closeModal('customerDialog')">取消</button>
@@ -1019,6 +1019,7 @@ async function editCustomer(id) {
     document.getElementById('dlgWeight').value = c.weight || '';
     document.getElementById('dlgTargetWeight').value = c.target_weight || '';
         document.getElementById('dlgCustomerTypeDisplay').textContent = c.customer_type === 'package' ? '套餐客户' : c.customer_type === 'treatment' ? '疗程客户' : 'CID客户';
+                document.getElementById('dlgCustomerTypeDisplay').style.color = c.customer_type === 'package' ? '#ff9500' : c.customer_type === 'treatment' ? '#34c759' : '#0071e3';
                 if (!c.customer_type) autoCalcCustomerType();
         document.getElementById('dlgRemark').value = c.remark || '';
         document.getElementById('dlgPurchaseHistory').value = c.purchase_history || '[]';
@@ -3072,6 +3073,7 @@ function showAddCustomer() {
   document.getElementById('dlgTargetWeight').value = '';
     document.getElementById('dlgPurchaseHistory').value = '[]';
         document.getElementById('dlgCustomerTypeDisplay').textContent = 'CID客户';
+    document.getElementById('dlgCustomerTypeDisplay').style.color = '#0071e3';
         document.getElementById('dlgRemark').value = '';
   updateLatestPurchaseDisplay();
   renderPurchaseHistoryList();
@@ -3082,13 +3084,20 @@ function autoCalcCustomerType() {
   const display = document.getElementById('dlgCustomerTypeDisplay');
   if (history.length === 0) {
     display.textContent = 'CID客户';
+    display.style.color = '#0071e3';
     return;
   }
   var maxAmount = 0;
   for (var i = 0; i < history.length; i++) {
     if (history[i].amount > maxAmount) maxAmount = history[i].amount;
   }
-  display.textContent = maxAmount >= 2970 ? '套餐客户' : '疗程客户';
+  if (maxAmount >= 2970) {
+    display.textContent = '套餐客户';
+    display.style.color = '#ff9500';
+  } else {
+    display.textContent = '疗程客户';
+    display.style.color = '#34c759';
+  }
 }
 function autoParse() {}
 
