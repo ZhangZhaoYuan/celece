@@ -224,6 +224,12 @@ def init_db():
     except:
         pass
 
+    # 兼容旧表：添加 score 字段
+    try:
+        conn.execute("ALTER TABLE effective_scripts ADD COLUMN score REAL DEFAULT 0")
+    except:
+        pass
+
     # 常见问题表
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS faq_entries (

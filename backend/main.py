@@ -1055,53 +1055,95 @@ async def api_generate_script(data: dict = Body(...)):
         tag_hint = "\n\n【本次分析方向】: " + "、".join(analysis_tags)
         parsed_recent = parsed_recent + tag_hint
     # ===== 有效话术分析 + 参考 =====
-        effective_refs = []
-        feedback_analysis = ""
+    effective_refs = []
+    feedback_analysis = ""
+    try:
+        recent_text = parsed_recent or recent or ""
+        if recent_text:
+            blocks = [b.strip() for b in recent_text.split("\n\n") if b.strip()]
+            if len(blocks) >= 2:
+                C_block = blocks[-1]
+                B_block = blocks[-2]
+                if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
+                    B_lines = B_block.split("\n")
+                    B_content = "\n".join(B_lines[1:]).strip() if len(B_lines) > 1 else B_block
+                    C_lines = C_block.split("\n")
+                    C_content = "\n".join(C_lines[1:]).strip() if len(C_lines) > 1 else C_block
+                    if len(B_content) > 10:
+                        score = 0
+                        response_type = "中性"
+                        scenario = "效果确认"
+                        buy_words = ["买", "付款", "多少钱", "下单", "转账", "支付", "收款码", "怎么付"]
+                        positive_words = ["好的", "瘦", "效果", "谢谢", "继续", "行", "可以", "不错", "有效", "轻了"]
+                        reject_words = ["不", "别", "不用", "不要", "不需要", "算了", "再考虑", "太贵", "没钱", "自己来"]
+                        for w in buy_words:
+                            if w in C_content:
+                                score += 3
+                                response_type = "成交"
+                                scenario = "复购推荐"
+                                break
+                        if response_type == "中性":
+                            for w in positive_words:
+                                if w in C_content:
+                                    score += 2
+                                    response_type = "积极"
+                                    break
+                        if response_type == "中性":
+                            for w in reject_words:
+                                if w in C_content:
+                                    score -= 1
+                                    response_type = "消极"
+                                    break
+                        if response_type == "中性" and len(C_content) > 0:
+                            score += 1
+                        if 30 <= len(B_content) <= 600:
+                            score += 1
+                        if "?" in B_content or "？" in B_content or "对不对" in B_content or "是吧" in B_content:
+                            score += 1
+                        if any(c.isdigit() for c in B_content):
+                            score += 1
+                        if "开心" in B_content or "高兴" in B_content or "放心" in B_content or "心疼" in B_content or "感动" in B_content:
+                            score += 1
+                        if "排油" in B_content or "排便" in B_content or "油脂" in B_content:
+                            scenario = "排油跟进"
+                        elif "瘦" in B_content or "体重" in B_content or "斤" in B_content:
+                            scenario = "效果确认"
+                        elif "买" in B_content or "续费" in B_content or "优惠" in B_content or "活动" in B_content:
+                            scenario = "复购推荐"
+                        elif "贵" in B_content or "价格" in B_content or "钱" in B_content:
+                            scenario = "异议处理"
+                        elif "阶段" in B_content or "周期" in B_content or "过程" in B_content:
+                            scenario = "科普教育"
+                        if score >= 2:
+                            from effective_scripts import add_effective_script
+                            ctype = customer.get("customer_type", "")
+                            ctype_label = {"package": "套餐客户", "treatment": "疗程客户", "cid": "CID客户"}.get(ctype, "CID客户")
+                            add_effective_script(B_content[:500], scenario, ctype_label, 1, score)
+                        feedback_analysis = f"\n【话术效果分析】\n上次发送: {B_content[:100]}\n客户回应: {C_content[:100]}\n评分: {score} ({response_type})"
         try:
-            # 分析上一条话术效果：获取最近一条 assistant 消息和客户对它的回应
-            from database import get_messages as get_customer_messages
-            all_msgs = get_customer_messages(customer_id)
-            if len(all_msgs) >= 2:
-                last_assistant = None
-                last_user = None
-                for m in reversed(all_msgs):
-                    if m['role'] == 'assistant' and last_assistant is None:
-                        last_assistant = m
-                    elif m['role'] == 'user' and last_assistant is not None and last_user is None:
-                        # 这条 user 消息可能是对 assistant 的回应
-                        last_user = m
-                        break
-                if last_assistant and last_user:
-                    feedback_analysis = f"\n【话术效果分析】\n上次发送给客户的话术: {last_assistant['content'][:100]}\n客户的回应: {last_user['content'][:100]}\n请分析客户是否正面回应了你的话术，如果是，标记为「有效」；如果是拒绝或岔开话题，标记为「无效」。"
-        
-            # 搜索有效话术作为参考
-            try:
-                from effective_scripts import search_effective_scripts_by_scenario
-                # 从 recent 中提取场景关键词
-                scenario_keywords = analysis_tags[0] if analysis_tags else ""
-                if not scenario_keywords:
-                    scenario_keywords = recent.strip()[:20]
-                refs = search_effective_scripts_by_scenario(scenario_keywords, customer.get("customer_type", ""), top_k=3)
-                if refs:
-                    effective_refs = [f"【有效话术参考】{r['content']}（有效{r['effective_count']}次）" for r in refs]
-            except Exception:
-                pass
+            from effective_scripts import search_effective_scripts_by_scenario
+            scenario_keywords = analysis_tags[0] if analysis_tags else ""
+            if not scenario_keywords:
+                scenario_keywords = (recent or "")[:20]
+            refs = search_effective_scripts_by_scenario(scenario_keywords, customer.get("customer_type", ""), top_k=3)
+            if refs:
+                effective_refs = [f"【有效话术参考】{r['content'][:60]}（评分{r['score']}，有效{r['effective_count']}次）" for r in refs]
         except Exception:
             pass
-    
-        # ===== 调用LLM生成话术 =====
-        result = await generate_script(
-                customer_info=customer,
-                recent_messages=parsed_recent,
-                chat_history=chat_history,
-                knowledge_results=knowledge_results,
-                settings=settings,
-                current_time=current_time,
-                image_results=image_results,
-                local_image_matches=local_image_matches,
-                effective_refs=effective_refs,
-                feedback_analysis=feedback_analysis
-            )
+    except Exception:
+        pass    # ===== 调用LLM生成话术 =====
+    result = await generate_script(
+            customer_info=customer,
+            recent_messages=parsed_recent,
+            chat_history=chat_history,
+            knowledge_results=knowledge_results,
+            settings=settings,
+            current_time=current_time,
+            image_results=image_results,
+            local_image_matches=local_image_matches,
+            effective_refs=effective_refs,
+            feedback_analysis=feedback_analysis
+        )
     # 解析话术中的 [生成图片: 描述] 标记，不实际生成图片
     import re
     pending_images = re.findall(r'\[生成图片:\s*(.*?)\]', result)

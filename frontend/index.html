@@ -2729,19 +2729,20 @@ async function loadEffectiveScripts() {
       var statusIcon = s.vector_status === 'done' ? '✅' : s.vector_status === 'failed' ? '⚠️' : '⏳';
       var statusTitle = s.vector_status === 'done' ? '已向量化' : s.vector_status === 'failed' ? '向量化失败' : '待处理';
       var scenarioLabel = s.scenario ? '<span style="background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:10px;font-size:11px">' + escapeHtml(s.scenario) + '</span>' : '';
-      var typeLabel = s.customer_type ? '<span style="background:#f3e5f5;color:#7b1fa2;padding:2px 8px;border-radius:10px;font-size:11px">' + escapeHtml(s.customer_type) + '</span>' : '';
-      return '<div style="border:1px solid var(--border-light);border-radius:8px;padding:10px 14px;margin:6px 10px;background:var(--bg-surface)">' +
-        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
-        '<div style="flex:1;font-size:13px;line-height:1.5;word-break:break-word">' + escapeHtml(s.content) + '</div>' +
-        '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:40px">' +
-        '<span title="' + statusTitle + '" style="font-size:16px;cursor:help">' + statusIcon + '</span>' +
-        '<span style="font-size:13px;font-weight:700;color:var(--primary)">' + s.effective_count + '次</span>' +
-        '<button onclick="deleteScript(' + s.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:2px">🗑️</button>' +
-        '</div></div>' +
-        '<div style="display:flex;gap:6px;margin-top:6px">' + scenarioLabel + typeLabel +
-        '<span style="font-size:11px;color:var(--text-secondary)">' + (s.last_effective_at || s.created_at || '').slice(0,10) + '</span>' +
-        (s.vector_status === 'failed' ? '<button onclick="revectorizeScript(' + s.id + ')" style="background:none;border:none;color:#f57c00;cursor:pointer;font-size:11px;padding:0">重新向量化</button>' : '') +
-        '</div></div>';
+            var typeLabel = s.customer_type ? '<span style="background:#f3e5f5;color:#7b1fa2;padding:2px 8px;border-radius:10px;font-size:11px">' + escapeHtml(s.customer_type) + '</span>' : '';
+            var scoreLabel = s.score !== undefined ? '<span style="background:#fff3e0;color:#ff9500;padding:2px 8px;border-radius:10px;font-size:11px">⭐ ' + s.score + '</span>' : '';
+            return '<div style="border:1px solid var(--border-light);border-radius:8px;padding:10px 14px;margin:6px 10px;background:var(--bg-surface)">' +
+              '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+              '<div style="flex:1;font-size:13px;line-height:1.5;word-break:break-word">' + escapeHtml(s.content) + '</div>' +
+              '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:40px">' +
+              '<span title="' + statusTitle + '" style="font-size:16px;cursor:help">' + statusIcon + '</span>' +
+              '<span style="font-size:13px;font-weight:700;color:var(--primary)">' + s.effective_count + '次</span>' +
+              '<button onclick="deleteScript(' + s.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:2px">🗑️</button>' +
+              '</div></div>' +
+              '<div style="display:flex;gap:6px;margin-top:6px">' + scenarioLabel + typeLabel + scoreLabel +
+              '<span style="font-size:11px;color:var(--text-secondary)">' + (s.last_effective_at || s.created_at || '').slice(0,10) + '</span>' +
+              (s.vector_status === 'failed' ? '<button onclick="revectorizeScript(' + s.id + ')" style="background:none;border:none;color:#f57c00;cursor:pointer;font-size:11px;padding:0">重新向量化</button>' : '') +
+              '</div></div>';
     }).join('');
   } catch(e) {
     container.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + escapeHtml(e.message) + '</div>';
