@@ -291,7 +291,44 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
                             </div>
                           </div>
 
-                    <!-- FAQ编辑弹窗 -->
+                    <!-- 有效话术编辑弹窗 -->
+      <div class="hidden modal-overlay" id="scriptEditDialog">
+        <div class="modal-card" style="width:600px">
+          <div class="modal-header">
+            <h3 id="scriptEditTitle">编辑有效话术</h3>
+            <button class="modal-close-btn" onclick="closeModal('scriptEditDialog')">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group"><label>话术内容</label><textarea id="scriptEditContent" rows="8" style="width:100%"></textarea></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div class="form-group"><label>场景</label>
+                <select id="scriptEditScenario">
+                  <option value="">自动识别</option>
+                  <option value="排油跟进">排油跟进</option>
+                  <option value="效果确认">效果确认</option>
+                  <option value="复购推荐">复购推荐</option>
+                  <option value="异议处理">异议处理</option>
+                  <option value="科普教育">科普教育</option>
+                </select>
+              </div>
+              <div class="form-group"><label>客户类型</label>
+                <select id="scriptEditCustomerType">
+                  <option value="">不限</option>
+                  <option value="CID客户">CID客户</option>
+                  <option value="疗程客户">疗程客户</option>
+                  <option value="套餐客户">套餐客户</option>
+                </select>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+              <button class="btn btn-outline" onclick="closeModal('scriptEditDialog')">取消</button>
+              <button class="btn btn-ghost" onclick="saveScriptEdit()">💾 保存</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FAQ编辑弹窗 -->
                     <div class="hidden modal-overlay" id="faqDialog">
                       <div class="modal-card" style="width:550px">
                         <div class="modal-header">
@@ -2737,7 +2774,8 @@ async function loadEffectiveScripts() {
               '<div style="display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0;min-width:40px">' +
               '<span title="' + statusTitle + '" style="font-size:16px;cursor:help">' + statusIcon + '</span>' +
               '<span style="font-size:13px;font-weight:700;color:var(--primary)">' + s.effective_count + '次</span>' +
-              '<button onclick="deleteScript(' + s.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:2px">🗑️</button>' +
+                      '<button onclick="editScript(' + s.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:2px">✏️</button>' +
+                      '<button onclick="deleteScript(' + s.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:12px;padding:2px">🗑️</button>' +
               '</div></div>' +
               '<div style="display:flex;gap:6px;margin-top:6px">' + scenarioLabel + typeLabel + scoreLabel +
               '<span style="font-size:11px;color:var(--text-secondary)">' + (s.last_effective_at || s.created_at || '').slice(0,10) + '</span>' +
@@ -2785,6 +2823,35 @@ async function loadScriptStats() {
   } catch(e) {
     container.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + escapeHtml(e.message) + '</div>';
   }
+}
+
+async function editScript(id) {
+  _editingScriptId = id;
+  document.getElementById('scriptEditTitle').textContent = '编辑有效话术';
+  try {
+    const r = await api('GET', '/api/effective-scripts');
+    const s = (r.scripts || []).find(x => x.id === id);
+    if (!s) { showToast('话术不存在'); return; }
+    document.getElementById('scriptEditContent').value = s.content || '';
+    document.getElementById('scriptEditScenario').value = s.scenario || '';
+    document.getElementById('scriptEditCustomerType').value = s.customer_type || '';
+    showModal('scriptEditDialog');
+  } catch(e) { showToast('加载失败'); }
+}
+
+async function saveScriptEdit() {
+  const content = document.getElementById('scriptEditContent').value.trim();
+  if (!content) { showToast('内容不能为空'); return; }
+  try {
+    await api('PUT', '/api/effective-scripts/' + _editingScriptId, {
+      content: content,
+      scenario: document.getElementById('scriptEditScenario').value,
+      customer_type: document.getElementById('scriptEditCustomerType').value
+    });
+    closeModal('scriptEditDialog');
+    showToast('已保存');
+    loadEffectiveScripts();
+  } catch(e) { showToast('保存失败: ' + e.message); }
 }
 
 async function deleteScript(id) {

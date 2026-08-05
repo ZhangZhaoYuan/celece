@@ -45,7 +45,8 @@ from database import (init_db, list_customers, get_customer, create_customer,
 from effective_scripts import (add_effective_script, list_effective_scripts,
                                get_effective_script_stats, delete_effective_script,
                                search_effective_scripts_by_scenario, dedup_effective_scripts,
-                               update_script_vector_status, revectorize_script)
+                               update_script_vector_status, revectorize_script,
+                               update_effective_script)
 from faq import (list_faqs, get_faq, add_faq, update_faq, delete_faq)
 from knowledge import (list_documents, get_document, add_document,
                        delete_document, search_knowledge, reindex_all,
@@ -1060,11 +1061,16 @@ async def api_generate_script(data: dict = Body(...)):
     try:
         recent_text = parsed_recent or recent or ""
         if recent_text:
-            blocks = [b.strip() for b in recent_text.split("\n\n") if b.strip()]
+            # 按发送者分割消息块（不是按空行，因为话术多段）
+            import re
+            # 消息头模式：人名 + 日期时间
+            block_pattern = r'(?:^|\n)(?=[^\n]+ \d{1,2}/\d{1,2} \d{1,2}:\d{2})'
+            raw_blocks = re.split(block_pattern, recent_text.strip())
+            blocks = [b.strip() for b in raw_blocks if b.strip()]
             if len(blocks) >= 2:
                 C_block = blocks[-1]
                 B_block = blocks[-2]
-                if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
+        if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
                     B_lines = B_block.split("\n")
                     B_content = "\n".join(B_lines[1:]).strip() if len(B_lines) > 1 else B_block
                     C_lines = C_block.split("\n")
@@ -3500,6 +3506,13 @@ async def api_dedup_scripts():
     """去重合并"""
     result = dedup_effective_scripts()
     return {"status": "ok", "result": result}
+
+
+@app.put("/api/effective-scripts/{script_id}")
+async def api_update_script(script_id: int, data: dict = Body(...)):
+    """编辑有效话术"""
+    update_effective_script(script_id, data.get("content", ""), data.get("scenario", ""), data.get("customer_type", ""))
+    return {"status": "ok"}
 
 
 # ===== 常见问题 =====

@@ -98,6 +98,19 @@ def update_script_vector_status(script_id, status):
     conn.close()
 
 
+def update_effective_script(script_id, content, scenario="", customer_type=""):
+    """更新有效话术内容"""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn = get_db()
+    conn.execute(
+        "UPDATE effective_scripts SET content=?, scenario=?, customer_type=?, updated_at=? WHERE id=?",
+        (content, scenario, customer_type, now, script_id)
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
 def revectorize_script(script_id):
     """重新向量化单条话术"""
     conn = get_db()
