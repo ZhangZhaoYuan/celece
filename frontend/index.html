@@ -240,8 +240,9 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
       <div class="hidden" id="pageKnowledge" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0">
               <div class="kb-toolbar">
                 <button class="btn btn-ghost btn-sm" id="kbTabDocs" onclick="switchKbTab('docs')" style="font-weight:600">📄 文档</button>
-                <button class="btn btn-ghost btn-sm" id="kbTabScripts" onclick="switchKbTab('scripts')">💡 有效话术</button>
-                <button class="btn btn-ghost btn-sm" id="kbTabStats" onclick="switchKbTab('stats')">📊 统计</button>
+                          <button class="btn btn-ghost btn-sm" id="kbTabScripts" onclick="switchKbTab('scripts')">💡 有效话术</button>
+                          <button class="btn btn-ghost btn-sm" id="kbTabFaq" onclick="switchKbTab('faq')">❓ 常见问题</button>
+                          <button class="btn btn-ghost btn-sm" id="kbTabStats" onclick="switchKbTab('stats')">📊 统计</button>
                 <span style="flex:1"></span>
                 <button class="btn btn-ghost btn-sm" id="kbUploadBtn" onclick="uploadKnowledge()" style="display:none">📄 上传文档</button>
                 <button class="btn btn-outline btn-sm" id="kbReindexBtn" onclick="reindexKnowledge()" style="display:none">🔄 重建索引</button>
@@ -276,13 +277,40 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
                 </div>
                 <div id="effectiveScriptList" style="flex:1;overflow-y:auto;padding:4px 0"></div>
               </div>
+              <!-- 常见问题标签 -->
+              <div id="kbFaqView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+                <div style="display:flex;gap:8px;padding:8px 12px;align-items:center;border-bottom:1px solid var(--border)">
+                  <button class="btn btn-ghost btn-sm" onclick="showAddFaq()">➕ 新增问题</button>
+                  <span id="faqCount" style="font-size:12px;color:var(--text-secondary);margin-left:auto"></span>
+                </div>
+                <div id="faqList" style="flex:1;overflow-y:auto;padding:8px 12px"></div>
+              </div>
               <!-- 统计标签 -->
               <div id="kbStatsView" style="display:none;flex:1;overflow:hidden;flex-direction:column;padding:20px">
-                <div id="effectiveScriptStats" style="font-size:14px;color:var(--text-secondary)">加载中...</div>
-              </div>
-            </div>
+                              <div id="effectiveScriptStats" style="font-size:14px;color:var(--text-secondary)">加载中...</div>
+                            </div>
+                          </div>
 
-      <!-- 图片索引卡片 -->
+                    <!-- FAQ编辑弹窗 -->
+                    <div class="hidden modal-overlay" id="faqDialog">
+                      <div class="modal-card" style="width:550px">
+                        <div class="modal-header">
+                          <h3 id="faqDialogTitle">新增常见问题</h3>
+                          <button class="modal-close-btn" onclick="closeModal('faqDialog')">✕</button>
+                        </div>
+                        <div class="modal-body">
+                          <div class="form-group"><label>问题</label><input type="text" id="faqQuestion" placeholder="例如：赛乐赛有没有副作用？"></div>
+                          <div class="form-group"><label>答案</label><textarea id="faqAnswer" rows="5" placeholder="输入详细解答..."></textarea></div>
+                          <div class="form-group"><label>分类（可选）</label><input type="text" id="faqCategory" placeholder="例如：价格、效果、副作用、使用方法"></div>
+                          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+                            <button class="btn btn-outline" onclick="closeModal('faqDialog')">取消</button>
+                            <button class="btn btn-ghost" onclick="saveFaq()">💾 保存</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 图片索引卡片 -->
       <div class="hidden" id="pageImageIndex" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
         <div class="kb-toolbar">
                   <button class="btn btn-outline btn-sm" onclick="showPage('knowledge')" style="margin-right:4px">返回</button>
@@ -2669,14 +2697,16 @@ let _currentScriptTab = 'docs';
 function switchKbTab(tab) {
   _currentScriptTab = tab;
   document.getElementById('kbDocsView').style.display = tab === 'docs' ? 'flex' : 'none';
-  document.getElementById('kbScriptsView').style.display = tab === 'scripts' ? 'flex' : 'none';
-  document.getElementById('kbStatsView').style.display = tab === 'stats' ? 'flex' : 'none';
+    document.getElementById('kbScriptsView').style.display = tab === 'scripts' ? 'flex' : 'none';
+    document.getElementById('kbFaqView').style.display = tab === 'faq' ? 'flex' : 'none';
+    document.getElementById('kbStatsView').style.display = tab === 'stats' ? 'flex' : 'none';
   document.getElementById('kbUploadBtn').style.display = tab === 'docs' ? 'inline-flex' : 'none';
   document.getElementById('kbReindexBtn').style.display = tab === 'docs' ? 'inline-flex' : 'none';
-  document.querySelectorAll('#kbTabDocs, #kbTabScripts, #kbTabStats').forEach(function(el) { el.style.fontWeight = 'normal'; });
-  document.getElementById('kbTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.fontWeight = '600';
-  if (tab === 'scripts') loadEffectiveScripts();
-  if (tab === 'stats') loadScriptStats();
+  document.querySelectorAll('#kbTabDocs, #kbTabScripts, #kbTabFaq, #kbTabStats').forEach(function(el) { el.style.fontWeight = 'normal'; });
+    document.getElementById('kbTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.fontWeight = '600';
+    if (tab === 'scripts') loadEffectiveScripts();
+    if (tab === 'faq') loadFaqs();
+    if (tab === 'stats') loadScriptStats();
 }
 
 async function loadEffectiveScripts() {
@@ -2780,6 +2810,84 @@ async function revectorizeScript(id) {
     showToast('已重新向量化');
     loadEffectiveScripts();
   } catch(e) { showToast('向量化失败'); }
+}
+
+// ===== 常见问题 =====
+async function loadFaqs() {
+  const container = document.getElementById('faqList');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-secondary)">加载中...</div>';
+  try {
+    const r = await api('GET', '/api/faq');
+    const faqs = r.faqs || [];
+    document.getElementById('faqCount').textContent = '共 ' + faqs.length + ' 条';
+    if (faqs.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:60px 20px;color:var(--text-secondary)">暂无常见问题，点击上方"新增问题"添加</div>';
+      return;
+    }
+    container.innerHTML = faqs.map(function(f) {
+      return '<div style="border:1px solid var(--border-light);border-radius:8px;padding:12px 16px;margin-bottom:8px;background:var(--bg-surface)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">' +
+        '<div style="flex:1">' +
+        '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">❓ ' + escapeHtml(f.question) + '</div>' +
+        '<div style="font-size:13px;color:var(--text-secondary);line-height:1.5;white-space:pre-wrap">' + escapeHtml(f.answer) + '</div>' +
+        (f.category ? '<span style="display:inline-block;margin-top:4px;background:#e8f5e9;color:#2e7d32;padding:1px 8px;border-radius:8px;font-size:11px">' + escapeHtml(f.category) + '</span>' : '') +
+        '</div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px;flex-shrink:0">' +
+        '<button onclick="editFaq(' + f.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:14px;padding:2px">✏️</button>' +
+        '<button onclick="deleteFaq(' + f.id + ')" style="background:none;border:none;color:#999;cursor:pointer;font-size:14px;padding:2px">🗑️</button>' +
+        '</div></div></div>';
+    }).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:red">加载失败: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function showAddFaq() {
+  _editingFaqId = null;
+  document.getElementById('faqDialogTitle').textContent = '新增常见问题';
+  document.getElementById('faqQuestion').value = '';
+  document.getElementById('faqAnswer').value = '';
+  document.getElementById('faqCategory').value = '';
+  showModal('faqDialog');
+}
+
+async function editFaq(id) {
+  _editingFaqId = id;
+  document.getElementById('faqDialogTitle').textContent = '编辑常见问题';
+  try {
+    const r = await api('GET', '/api/faq/' + id);
+    const f = r.faq || {};
+    document.getElementById('faqQuestion').value = f.question || '';
+    document.getElementById('faqAnswer').value = f.answer || '';
+    document.getElementById('faqCategory').value = f.category || '';
+    showModal('faqDialog');
+  } catch(e) { showToast('加载失败'); }
+}
+
+async function saveFaq() {
+  const question = document.getElementById('faqQuestion').value.trim();
+  const answer = document.getElementById('faqAnswer').value.trim();
+  if (!question || !answer) { showToast('问题和答案不能为空'); return; }
+  const data = { question: question, answer: answer, category: document.getElementById('faqCategory').value.trim() };
+  try {
+    if (_editingFaqId) {
+      await api('PUT', '/api/faq/' + _editingFaqId, data);
+    } else {
+      await api('POST', '/api/faq', data);
+    }
+    closeModal('faqDialog');
+    showToast('保存成功');
+    loadFaqs();
+  } catch(e) { showToast('保存失败: ' + e.message); }
+}
+
+async function deleteFaq(id) {
+  if (!await showConfirm('确定删除这条常见问题？', '删除确认')) return;
+  try {
+    await api('DELETE', '/api/faq/' + id);
+    showToast('已删除');
+    loadFaqs();
+  } catch(e) { showToast('删除失败'); }
 }
 
 // ===== 知识库 =====

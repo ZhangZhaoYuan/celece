@@ -46,6 +46,7 @@ from effective_scripts import (add_effective_script, list_effective_scripts,
                                get_effective_script_stats, delete_effective_script,
                                search_effective_scripts_by_scenario, dedup_effective_scripts,
                                update_script_vector_status, revectorize_script)
+from faq import (list_faqs, get_faq, add_faq, update_faq, delete_faq)
 from knowledge import (list_documents, get_document, add_document,
                        delete_document, search_knowledge, reindex_all,
                        get_knowledge_status, get_document_content,
@@ -3457,6 +3458,53 @@ async def api_dedup_scripts():
     """去重合并"""
     result = dedup_effective_scripts()
     return {"status": "ok", "result": result}
+
+
+# ===== 常见问题 =====
+
+@app.get("/api/faq")
+async def api_list_faqs(category: str = Query("")):
+    """获取FAQ列表"""
+    return {"faqs": list_faqs(category)}
+
+
+@app.get("/api/faq/{faq_id}")
+async def api_get_faq(faq_id: int):
+    """获取单个FAQ"""
+    faq = get_faq(faq_id)
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ不存在")
+    return {"faq": faq}
+
+
+@app.post("/api/faq")
+async def api_add_faq(data: dict = Body(...)):
+    """添加FAQ"""
+    question = data.get("question", "").strip()
+    answer = data.get("answer", "").strip()
+    if not question or not answer:
+        raise HTTPException(status_code=400, detail="问题和答案不能为空")
+    result = add_faq(question, answer, data.get("category", ""), data.get("sort_order", 0))
+    return {"status": "ok", "faq": result}
+
+
+@app.put("/api/faq/{faq_id}")
+async def api_update_faq(faq_id: int, data: dict = Body(...)):
+    """更新FAQ"""
+    faq = get_faq(faq_id)
+    if not faq:
+        raise HTTPException(status_code=404, detail="FAQ不存在")
+    update_faq(faq_id, data.get("question", ""), data.get("answer", ""),
+               data.get("category", ""), data.get("sort_order", 0))
+    return {"status": "ok"}
+
+
+@app.delete("/api/faq/{faq_id}")
+async def api_delete_faq(faq_id: int):
+    """删除FAQ"""
+    if delete_faq(faq_id):
+        return {"status": "ok"}
+    raise HTTPException(status_code=404, detail="FAQ不存在")
 
 
 # ===== 数据统计 API =====

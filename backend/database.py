@@ -224,6 +224,25 @@ def init_db():
     except:
         pass
 
+    # 常见问题表
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS faq_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    category TEXT DEFAULT '',
+    sort_order INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now','localtime')),
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+        )
+    """)
+
+    # 兼容旧表：添加 FAQ 字段
+    try:
+        conn.execute("ALTER TABLE faq_entries ADD COLUMN category TEXT DEFAULT ''")
+    except:
+        pass
+
     # 兼容旧表：添加 applicable_customers 字段（如果不存在）
     try:
         conn.execute("ALTER TABLE image_index ADD COLUMN applicable_customers TEXT DEFAULT ''")
