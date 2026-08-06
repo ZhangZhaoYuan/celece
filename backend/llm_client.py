@@ -127,10 +127,36 @@ async def generate_script_stream(customer_info: dict,
 以下图片库有真实可用的图片。请优先从中选择适合当前话术的图片，用 `[生成图片: 精确描述]` 引用，描述文字必须与下方完全一致。只有本地图库没有合适图片时，才自行构思生成新图片。
 """ + "\n".join(local_items) + "\n"
 
+    # 检查是否需要跳过问候（30分钟内客户回复了你的提问）
+    skip_greeting = False
+    if recent_messages:
+        import re
+        ts_pattern = r'(\d{1,2}/\d{1,2} \d{1,2}:\d{2})'
+        all_ts = re.findall(ts_pattern, recent_messages)
+        sender_pattern = r'(?:^|\n)([^\n]+?)(?: \d{1,2}/\d{1,2})'
+        senders = re.findall(sender_pattern, recent_messages)
+        if len(all_ts) >= 2 and len(senders) >= 2:
+            last_sender = senders[-1]
+            prev_sender = senders[-2]
+            if "张兆渊" in prev_sender and "张兆渊" not in last_sender:
+                try:
+                    from datetime import datetime
+                    now = datetime.now()
+                    prev_dt = datetime.strptime(f"{now.year}/{all_ts[-2]}", "%Y/%m/%d %H:%M")
+                    last_dt = datetime.strptime(f"{now.year}/{all_ts[-1]}", "%Y/%m/%d %H:%M")
+                    if last_dt < prev_dt:
+                        prev_dt = prev_dt.replace(year=now.year-1)
+                    diff_min = (last_dt - prev_dt).total_seconds() / 60
+                    if 0 < diff_min <= 30:
+                        skip_greeting = True
+                except:
+                    pass
+
+    skip_greeting_text = "⚠️ 注意：客户在30分钟内回复了你的提问，直接回复客户，不要问候、不要道歉、不要说'我看到你的消息了'，继续正常对话。\n" if skip_greeting else ""
+
     user_message = f"""【当前时间】
 {current_time}
-
-【知识库参考内容】
+{skip_greeting_text}【知识库参考内容】
 {knowledge_text}
 
 【客户信息】
@@ -389,11 +415,41 @@ async def generate_script(customer_info: dict,
 以下图片库有真实可用的图片。请优先从中选择适合当前话术的图片，用 `[生成图片: 精确描述]` 引用，描述文字必须与下方完全一致。只有本地图库没有合适图片时，才自行构思生成新图片。
 """ + "\n".join(local_items) + "\n"
 
+    # 检查是否需要跳过问候（30分钟内客户回复了你的提问）
+    skip_greeting = False
+    if recent_messages:
+        import re
+        # 提取最后两条消息的时间戳
+        ts_pattern = r'(\d{1,2}/\d{1,2} \d{1,2}:\d{2})'
+        all_ts = re.findall(ts_pattern, recent_messages)
+        # 提取最后两条消息的发送者
+        sender_pattern = r'(?:^|\n)([^\n]+?)(?: \d{1,2}/\d{1,2})'
+        senders = re.findall(sender_pattern, recent_messages)
+        if len(all_ts) >= 2 and len(senders) >= 2:
+            last_sender = senders[-1]
+            prev_sender = senders[-2]
+            # 上一条是张兆渊（提问），最后一条是客户（回复）
+            if "张兆渊" in prev_sender and "张兆渊" not in last_sender:
+                try:
+                    from datetime import datetime
+                    now = datetime.now()
+                    prev_dt = datetime.strptime(f"{now.year}/{all_ts[-2]}", "%Y/%m/%d %H:%M")
+                    last_dt = datetime.strptime(f"{now.year}/{all_ts[-1]}", "%Y/%m/%d %H:%M")
+                    # 跨年处理
+                    if last_dt < prev_dt:
+                        prev_dt = prev_dt.replace(year=now.year-1)
+                    diff_min = (last_dt - prev_dt).total_seconds() / 60
+                    if 0 < diff_min <= 30:
+                        skip_greeting = True
+                except:
+                    pass
+
+    skip_greeting_text = "⚠️ 注意：客户在30分钟内回复了你的提问，直接回复客户，不要问候、不要道歉、不要说'我看到你的消息了'，继续正常对话。\n" if skip_greeting else ""
+
     # 构建用户消息
     user_message = f"""【当前时间】
-{current_time}
-
-【知识库参考内容】
+    {current_time}
+    {skip_greeting_text}【知识库参考内容】
 {knowledge_text}
 
 【客户信息】
