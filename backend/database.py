@@ -1369,13 +1369,14 @@ def rebuild_image_vectors(batch_size=20, force=False):
                 processed += 1
                 continue
             try:
+                vconn_main.execute("DELETE FROM image_vectors WHERE image_id=?", (img_id,))
                 vconn_main.execute(
-                    "INSERT OR REPLACE INTO image_vectors (image_id, vector) VALUES (?, ?)",
+                    "INSERT INTO image_vectors (image_id, vector) VALUES (?, ?)",
                     (img_id, _vec_to_str(vec))
                 )
                 vconn_main.commit()
                 success += 1
-            except Exception:
+            except Exception as e:
                 failed += 1
             processed += 1
             # 每处理一张更新进度回调

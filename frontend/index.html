@@ -3305,12 +3305,21 @@ async function reindexImageVectors() {
           } else if (pr.data && !pr.data.running) {
             status.textContent = '✅ ' + (pr.data.message || '重建完成');
             const errs = pr.data.failed_errors || {};
-            const errCount = Object.keys(errs).length;
-            const errNames = Object.values(errs).slice(0,5).join('\n');
-            document.getElementById('reindexProgressMsg').textContent = '✅ ' + (pr.data.message || '重建完成') + (errCount > 0 ? '（失败' + errCount + '张）' : '');
-            if (errCount > 0) {
-              document.getElementById('reindexProgressDetail').innerHTML = '<div style="font-size:12px;color:#e53935;margin-top:4px">失败 ' + errCount + ' 张：<br>' + escapeHtml(errNames) + (Object.keys(errs).length > 5 ? '<br>...等' + Object.keys(errs).length + '张' : '') + '</div>' +
-                '<button class="btn btn-ghost btn-sm" onclick="retryFailedReindex()" style="margin-top:8px;font-size:12px">🔄 重试失败</button>';
+                        const errCount = Object.keys(errs).length;
+                        const errNames = Object.values(errs).slice(0,5).join('\n');
+                        document.getElementById('reindexProgressMsg').textContent = '✅ ' + (pr.data.message || '重建完成') + (errCount > 0 ? '（失败' + errCount + '张）' : '');
+                        if (errCount > 0) {
+                          // 按错误类型汇总
+                          var errSummary = {};
+                          Object.keys(errs).forEach(function(k) {
+                            var msg = errs[k];
+                            errSummary[msg] = (errSummary[msg] || 0) + 1;
+                          });
+                          var summaryHtml = Object.keys(errSummary).map(function(msg) {
+                            return '• ' + escapeHtml(msg) + ' (' + errSummary[msg] + '张)';
+                          }).join('<br>');
+                          document.getElementById('reindexProgressDetail').innerHTML = '<div style="font-size:12px;color:#e53935;margin-top:4px">失败原因:<br>' + summaryHtml + '</div>' +
+                            '<button class="btn btn-ghost btn-sm" onclick="retryFailedReindex()" style="margin-top:8px;font-size:12px">🔄 重试失败</button>';
             } else {
               document.getElementById('reindexProgressDetail').textContent = '';
             }
