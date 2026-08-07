@@ -32,8 +32,8 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 .sidebar-item .customer-actions button{border:none;background:transparent;cursor:pointer;padding:2px;color:var(--text-secondary);font-size:12px}
 .sidebar-item .customer-actions button:hover{color:var(--primary)}
 .sidebar-item .preview{font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.category-group{border-bottom:1px solid var(--border-light)}
-.category-header{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:500;user-select:none}
+.category-group{border-bottom:1px solid var(--border-light);background:var(--bg-surface)}
+.category-header{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:500;user-select:none;position:sticky;top:0;z-index:10;background:var(--bg-surface)}
 .category-header:hover{background:var(--bg)}
 .category-header .arrow{font-size:9px;color:var(--text-secondary);width:14px;display:inline-block;transition:transform .2s}
 .category-header .arrow.expanded{transform:rotate(90deg)}
