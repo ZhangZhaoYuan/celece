@@ -214,7 +214,9 @@ def init_db():
     effective_count INTEGER DEFAULT 1,
     last_effective_at TEXT,
     created_at TEXT DEFAULT (datetime('now','localtime')),
-    vector_status TEXT DEFAULT 'pending'
+    updated_at TEXT,
+    vector_status TEXT DEFAULT 'pending',
+    score REAL DEFAULT 0
         )
     """)
 

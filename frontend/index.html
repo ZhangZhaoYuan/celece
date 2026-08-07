@@ -21,7 +21,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 .sidebar-search{padding:10px 10px;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:8px}
 .sidebar-search input{flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:12px;outline:none;background:var(--bg);transition:border .2s}
 .sidebar-search input:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
-.sidebar-list{flex:1;overflow-y:auto}
+.sidebar-list{flex:1;overflow-y:auto;background:var(--bg-surface)}
 .sidebar-item{padding:7px 12px;border-bottom:1px solid var(--border-light);cursor:pointer}
 .sidebar-item:hover{background:var(--bg)}
 .sidebar-item.active{background:var(--primary-bg)}
@@ -33,7 +33,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 .sidebar-item .customer-actions button:hover{color:var(--primary)}
 .sidebar-item .preview{font-size:11px;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .category-group{border-bottom:1px solid var(--border-light);background:var(--bg-surface)}
-.category-header{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:500;user-select:none;position:sticky;top:0;z-index:10;background:var(--bg-surface)}
+.category-header{display:flex;align-items:center;gap:6px;padding:8px 12px;cursor:pointer;font-size:12px;font-weight:500;user-select:none;position:sticky;top:0;z-index:10;background:var(--bg-surface);box-shadow:0 1px 0 var(--border-light)}
 .category-header:hover{background:var(--bg)}
 .category-header .arrow{font-size:9px;color:var(--text-secondary);width:14px;display:inline-block;transition:transform .2s}
 .category-header .arrow.expanded{transform:rotate(90deg)}
