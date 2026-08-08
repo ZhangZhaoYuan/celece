@@ -71,7 +71,7 @@ def _sync_faq_to_knowledge():
     """同步FAQ到知识库（自动向量化，供生成话术时搜索）"""
     import os
     from pathlib import Path
-    from knowledge import KNOWLEDGE_DIR, add_document, reindex_document
+    from knowledge import KNOWLEDGE_DIR, add_document, delete_document
     
     faqs = list_faqs()
     if not faqs:
@@ -90,11 +90,12 @@ def _sync_faq_to_knowledge():
     faq_file = KNOWLEDGE_DIR / "常见问题.txt"
     faq_file.write_text(content, encoding="utf-8")
     
-    # 如果文档已存在，更新；否则新建
+    # 先删除旧文档，再新建（避免重复）
     try:
-        reindex_document("常见问题.txt")
+        delete_document("常见问题.txt")
     except Exception:
-        try:
-            add_document("常见问题.txt", content)
-        except Exception:
-            pass
+        pass
+    try:
+        add_document("常见问题.txt", content)
+    except Exception:
+        pass
