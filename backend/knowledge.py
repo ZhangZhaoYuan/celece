@@ -602,18 +602,13 @@ def _semantic_search(query: str, top_k: int = 50) -> list:
             (vec_str, top_k)
         ).fetchall()
 
-        conn.close()
-
-        # 从主库获取 chunk 元数据（跨数据库查询）
-        from database import get_db
-        main_conn = get_db()
         results = []
         for rank, row in enumerate(rows):
             distance = row["distance"]
             score = max(0, 1.0 - distance / 2.0)
             chunk_id = row["id"]
 
-            chunk_row = main_conn.execute(
+            chunk_row = conn.execute(
                 "SELECT content, doc_id, chunk_index, filename, title FROM knowledge_chunks WHERE id = ?",
                 (chunk_id,)
             ).fetchone()
@@ -629,7 +624,7 @@ def _semantic_search(query: str, top_k: int = 50) -> list:
                 "semantic_score": round(score, 4)
             })
 
-        main_conn.close()
+        conn.close()
         return results, "ok"
 
     except Exception as e:
@@ -1014,58 +1009,55 @@ def _describe_image(image_path: str) -> str:
                 errors.append(f"{v_cfg['model']}: 返回空")
         else:
             errors.append("get_vision_model_config(): 无可用配置")
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")[:100]
-        errors.append(f"vision_default: HTTP {e.code} {err_body}")
-    except Exception as e:
+    except (urllib.error.HTTPError, Exception) as e:
         errors.append(f"vision_default: {e}")
 
     # === 尝试2: 遍历 models.list 中的其他视觉模型 ===
-        try:
-            import config_manager as _cfg
-            _all_cfg = _cfg.load_config()
-            _models = _all_cfg.get("models", {}).get("list", {})
-            _def_id = _all_cfg.get("models", {}).get("vision_default_id", "")
-            for _mid, _mcfg in _models.items():
-                if _mid == _def_id:
-                    continue
-                _mname = _mcfg.get("model", "")
-                _cats = _mcfg.get("categories", [])
-                # 判断是否视觉模型：检查 categories 或模型名
-                is_vision_model = "vision" in _cats or \
-                                  ("-4v-" in _mname.lower() or "-1v-" in _mname.lower() or "vision" in _mname.lower()) or \
-                                  (_mname.lower().startswith("step-") and "flash" in _mname.lower())
-                if is_vision_model:
-                    _key = _mcfg.get("api_key", "")
-                    _url = _mcfg.get("base_url", "").rstrip("/")
-                    if _key and _url:
-                        try:
-                            desc = _try_call(_mname, _key, _url)
-                            if desc:
-                                print(f"[图片描述] {_mname} 成功: {desc[:50]}...")
-                                return desc
-                        except Exception as _e:
-                            errors.append(f"{_mname}: {_e}")
-        except Exception as e:
-            errors.append(f"models.list遍历: {e}")
-
-        # === 尝试3: 使用默认话术模型（如果它有视觉能力）===
-        try:
-            import config_manager as _cfg
-            _llm_cfg = _cfg.get_llm_config()
-            if _llm_cfg and _llm_cfg.get("api_key") and _llm_cfg.get("model"):
-                _mname = _llm_cfg.get("model", "")
-                # 跳过上面已经试过的模型
-                if _mname not in [e.split(":")[0] for e in errors]:
+    try:
+        import config_manager as _cfg
+        _all_cfg = _cfg.load_config()
+        _models = _all_cfg.get("models", {}).get("list", {})
+        _def_id = _all_cfg.get("models", {}).get("vision_default_id", "")
+        for _mid, _mcfg in _models.items():
+            if _mid == _def_id:
+                continue
+            _mname = _mcfg.get("model", "")
+            _cats = _mcfg.get("categories", [])
+            # 判断是否视觉模型：检查 categories 或模型名
+            is_vision_model = "vision" in _cats or \
+                              ("-4v-" in _mname.lower() or "-1v-" in _mname.lower() or "vision" in _mname.lower()) or \
+                              (_mname.lower().startswith("step-") and "flash" in _mname.lower())
+            if is_vision_model:
+                _key = _mcfg.get("api_key", "")
+                _url = _mcfg.get("base_url", "").rstrip("/")
+                if _key and _url:
                     try:
-                        desc = _try_call(_mname, _llm_cfg["api_key"], _llm_cfg["base_url"].rstrip("/"))
+                        desc = _try_call(_mname, _key, _url)
                         if desc:
-                            print(f"[图片描述] {_mname}（默认话术模型）成功: {desc[:50]}...")
+                            print(f"[图片描述] {_mname} 成功: {desc[:50]}...")
                             return desc
                     except Exception as _e:
                         errors.append(f"{_mname}: {_e}")
-        except Exception as e:
-            errors.append(f"默认话术模型: {e}")
+    except Exception as e:
+        errors.append(f"models.list遍历: {e}")
+
+    # === 尝试3: 使用默认话术模型（如果它有视觉能力）===
+    try:
+        import config_manager as _cfg
+        _llm_cfg = _cfg.get_llm_config()
+        if _llm_cfg and _llm_cfg.get("api_key") and _llm_cfg.get("model"):
+            _mname = _llm_cfg.get("model", "")
+            # 跳过上面已经试过的模型
+            if _mname not in [e.split(":")[0] for e in errors]:
+                try:
+                    desc = _try_call(_mname, _llm_cfg["api_key"], _llm_cfg["base_url"].rstrip("/"))
+                    if desc:
+                        print(f"[图片描述] {_mname}（默认话术模型）成功: {desc[:50]}...")
+                        return desc
+                except Exception as _e:
+                    errors.append(f"{_mname}: {_e}")
+    except Exception as e:
+        errors.append(f"默认话术模型: {e}")
 
         # === 全部失败 ===
     err_msg = "；".join(errors) if errors else "所有视觉模型均不可用"

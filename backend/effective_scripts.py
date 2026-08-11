@@ -119,7 +119,7 @@ def revectorize_script(script_id):
     if not script:
         return False
     try:
-        from knowledge import get_embedding
+        from knowledge import _get_embedding as get_embedding
         vec = get_embedding(script["content"])
         if vec:
             update_script_vector_status(script_id, "done")

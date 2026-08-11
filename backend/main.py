@@ -1070,7 +1070,7 @@ async def api_generate_script(data: dict = Body(...)):
             if len(blocks) >= 2:
                 C_block = blocks[-1]
                 B_block = blocks[-2]
-        if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
+                if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
                     B_lines = B_block.split("\n")
                     B_content = "\n".join(B_lines[1:]).strip() if len(B_lines) > 1 else B_block
                     C_lines = C_block.split("\n")
@@ -1324,7 +1324,9 @@ async def api_generate_script_stream(request: Request, data: dict = Body(...)):
             settings=settings,
             current_time=current_time,
             image_results=image_results,
-            local_image_matches=local_image_matches
+            local_image_matches=local_image_matches,
+            effective_refs=effective_refs,
+            feedback_analysis=feedback_analysis
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
             
