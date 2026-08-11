@@ -69,7 +69,9 @@ async def generate_script_stream(customer_info: dict,
                                   settings: dict,
                                   current_time: str = "",
                                   image_results: list = None,
-                                  local_image_matches: list = None):
+                                  local_image_matches: list = None,
+                                  effective_refs: list = None,
+                                  feedback_analysis: str = ""):
     """
     流式生成销售话术 — 逐段 yield，遇到 [生成图片: xxx] 时 yield image_pending
     yield 事件格式:
@@ -96,6 +98,16 @@ async def generate_script_stream(customer_info: dict,
     chat_history_text = chat_history if chat_history else "（暂无历史沟通记录）"
     customer_title = customer_info.get("title", customer_info.get("name", ""))
     customer_remark = customer_info.get("remark", "")
+
+    # 处理有效话术参考
+    effective_refs_text = ""
+    if effective_refs:
+        effective_refs_text = "\n【有效话术参考】\n" + "\n".join(effective_refs)
+
+    # 处理话术效果分析
+    feedback_text = ""
+    if feedback_analysis:
+        feedback_text = f"\n{feedback_analysis}\n"
 
     if not current_time:
         from datetime import datetime
@@ -177,11 +189,10 @@ async def generate_script_stream(customer_info: dict,
 【历史沟通记录（含每条消息的时间）】
 {chat_history_text}
 
-{script_ref_text}
-{feedback_text}
-
 {image_text}
 {local_image_text}
+{effective_refs_text}
+{feedback_text}
 【聊天风格要求】
 （已包含在系统提示词中）
 
@@ -472,6 +483,8 @@ async def generate_script(customer_info: dict,
 
 {image_text}
 {local_image_text}
+{effective_refs_text}
+{feedback_text}
 【聊天风格要求】
 （已包含在系统提示词中）
 

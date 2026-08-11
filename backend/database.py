@@ -1418,6 +1418,7 @@ def rebuild_category_profile_vectors(batch_size=5):
 
     success = 0
     failed = 0
+    failed_errors = {}
     for row in rows:
         name = row["name"]
         desc = (row["description"] or "").strip()
@@ -1436,8 +1437,9 @@ def rebuild_category_profile_vectors(batch_size=5):
             )
             vconn.commit()
             success += 1
-        except Exception:
+        except Exception as e:
             failed += 1
+            failed_errors[name] = str(e)
         time.sleep(0.3)  # 避免API限流
 
     return {"status": "ok", "total": total, "success": success, "failed": failed, "failed_errors": failed_errors}
