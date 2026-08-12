@@ -99,15 +99,19 @@ async def generate_script_stream(customer_info: dict,
     customer_title = customer_info.get("title", customer_info.get("name", ""))
     customer_remark = customer_info.get("remark", "")
 
+    # 处理有效话术参考
+    effective_refs_text = ""
+    if effective_refs:
+        effective_refs_text = "\n【有效话术参考】\n" + "\n".join(effective_refs)
+
+    # 处理话术效果分析
+    feedback_text = ""
+    if feedback_analysis:
+        feedback_text = f"\n{feedback_analysis}\n"
+
     if not current_time:
         from datetime import datetime
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # 有效话术参考 + 话术效果分析
-    script_ref_text = ""
-    if effective_refs:
-        script_ref_text = "【有效话术参考（过往被客户认可的话术，可参考其表达方式）】\n" + "\n".join(effective_refs) + "\n"
-    feedback_text = feedback_analysis if feedback_analysis else ""
 
     # 图片匹配结果
     image_text = ""
@@ -185,11 +189,10 @@ async def generate_script_stream(customer_info: dict,
 【历史沟通记录（含每条消息的时间）】
 {chat_history_text}
 
-{script_ref_text}
-{feedback_text}
-
 {image_text}
 {local_image_text}
+{effective_refs_text}
+{feedback_text}
 【聊天风格要求】
 （已包含在系统提示词中）
 

@@ -1010,10 +1010,7 @@ def _describe_image(image_path: str) -> str:
                 errors.append(f"{v_cfg['model']}: 返回空")
         else:
             errors.append("get_vision_model_config(): 无可用配置")
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8", errors="replace")[:100]
-        errors.append(f"vision_default: HTTP {e.code} {err_body}")
-    except Exception as e:
+    except (urllib.error.HTTPError, Exception) as e:
         errors.append(f"vision_default: {e}")
 
     # === 尝试2: 遍历 models.list 中的其他视觉模型 ===
