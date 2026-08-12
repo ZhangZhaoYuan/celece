@@ -69,7 +69,9 @@ async def generate_script_stream(customer_info: dict,
                                   settings: dict,
                                   current_time: str = "",
                                   image_results: list = None,
-                                  local_image_matches: list = None):
+                                  local_image_matches: list = None,
+                                  effective_refs: list = None,
+                                  feedback_analysis: str = ""):
     """
     流式生成销售话术 — 逐段 yield，遇到 [生成图片: xxx] 时 yield image_pending
     yield 事件格式:
@@ -100,6 +102,12 @@ async def generate_script_stream(customer_info: dict,
     if not current_time:
         from datetime import datetime
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 有效话术参考 + 话术效果分析
+    script_ref_text = ""
+    if effective_refs:
+        script_ref_text = "【有效话术参考（过往被客户认可的话术，可参考其表达方式）】\n" + "\n".join(effective_refs) + "\n"
+    feedback_text = feedback_analysis if feedback_analysis else ""
 
     # 图片匹配结果
     image_text = ""
@@ -446,6 +454,12 @@ async def generate_script(customer_info: dict,
 
     skip_greeting_text = "⚠️ 注意：客户在30分钟内回复了你的提问，直接回复客户，不要问候、不要道歉、不要说'我看到你的消息了'，继续正常对话。\n" if skip_greeting else ""
 
+    # 有效话术参考 + 话术效果分析
+    script_ref_text = ""
+    if effective_refs:
+        script_ref_text = "【有效话术参考（过往被客户认可的话术，可参考其表达方式）】\n" + "\n".join(effective_refs) + "\n"
+    feedback_text = feedback_analysis if feedback_analysis else ""
+
     # 构建用户消息
     user_message = f"""【当前时间】
     {current_time}
@@ -469,6 +483,9 @@ async def generate_script(customer_info: dict,
 
 【历史沟通记录（含每条消息的时间）】
 {chat_history_text}
+
+{script_ref_text}
+{feedback_text}
 
 {image_text}
 {local_image_text}

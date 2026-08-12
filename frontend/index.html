@@ -1429,7 +1429,6 @@ function renderMessages() {
                                                                                         <div class="script-block-header" style="justify-content:space-between">
                                                                                           <span style="font-size:12px;color:#999">📷 生成图片</span>
                                                                                           <div style="display:flex;gap:4px">
-                                                                                            <button class="gen-replace-btn" onclick="replaceImage(${idx},${pi},'${filename}','${desc}')">🔄 替换</button>
                                                                                             <button class="cp-btn" onclick="copyGenImage('${filename}','${desc}')" title="复制图片到剪贴板">📋</button>
                                                                                           </div>
                                                                                         </div>
@@ -1936,99 +1935,6 @@ async function navigateToImageCategory(categoryName, imageId) {
               html += '</div></div>';
               return html;
             }
-
-      async function replaceImage(msgIdx, partIdx, oldFilename, oldDesc) {
-        // 先获取详细提示词
-        var detailedPrompt = oldDesc;
-        try {
-          var ctxResp = await fetch('/api/generate-image-prompt', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ description: oldDesc, context: (messages[msgIdx] ? messages[msgIdx]._parts.slice(0,5).join('\\n') : '') })
-          });
-          if (ctxResp.ok) {
-            var ctxData = await ctxResp.json();
-            if (ctxData.detailed_prompt) detailedPrompt = ctxData.detailed_prompt;
-          }
-        } catch(e) { /* 失败则用原描述 */ }
-  
-        var newDesc = await showPrompt('输入新的图片描述（提示词）：\n\n（以下为详细提示词，可修改）', detailedPrompt);
-        if (!newDesc || newDesc.trim() === '') return;
-        newDesc = newDesc.trim();
-  
-      var msg = messages[msgIdx];
-      if (!msg || !msg._parts || !msg._parts[partIdx]) return;
-  
-      // 更新parts中的描述
-            msg._parts[partIdx] = '[生成图片: ' + newDesc + ']';
-
-            // 直接更新DOM中的对应卡片，不重新渲染所有消息
-            var taskId = 'genimg_' + msgIdx + '_' + partIdx;
-            var card = document.getElementById(taskId);
-            var newDescEscaped = escapeHtml(newDesc);
-            if (card) {
-              card.className = 'gen-progress-card gen-placeholder-card';
-              card.innerHTML = '<div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 搜索本地图片...</span></div><div class="gen-prompt-box">' + newDescEscaped + '</div>';
-            } else {
-              // 如果没有找到卡片（DOM结构异常），fallback到重新渲染
-              renderMessages();
-              await new Promise(r => setTimeout(r, 100));
-            }
-  
-      // 生成新图片
-      var taskId = 'genimg_' + msgIdx + '_' + partIdx;
-  
-      try {
-        var bar = document.getElementById(taskId + '_bar');
-        var status = document.getElementById(taskId + '_status');
-        if (bar) { bar.style.width = '30%'; }
-        if (status) { status.textContent = '重新生成中 30%'; }
-  
-        var resp = await fetch('/api/generate_image', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: newDesc })
-        });
-  
-        if (!resp.ok) { showToast('图片生成失败'); renderMessages(); return; }
-        var data = await resp.json();
-        if (!data.filename) { showToast('生成失败：无文件名'); renderMessages(); return; }
-  
-        // 更新消息内容
-        var newContent = '[AI图片:' + data.filename + ':' + newDesc + ']';
-        msg._parts[partIdx] = newContent;
-  
-        // 更新后端保存的内容
-                if (msg.content) {
-                  msg.content = msg.content.replace('[生成图片: ' + oldDesc + ']', newContent);
-                  if (msg.id && msg.id > 0) {
-                    fetch('/api/messages/' + msg.id, {
-                      method: 'PUT',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ content: msg.content })
-                    }).catch(function(){});
-                  }
-                }
-  
-                // 直接更新DOM中的卡片为已生成图片，不重新渲染全部
-                var resultCard = document.getElementById(taskId);
-                if (resultCard) {
-                  resultCard.className = 'gen-progress-card gen-placeholder-card gen-image-ready';
-                  var simHtml = '';
-                  if (msg._pending_image_matches && msg._pending_image_matches[newDesc]) {
-                    simHtml = renderSimilarImageThumbs(msg._pending_image_matches[newDesc]);
-                  }
-                  resultCard.innerHTML = '<div class="script-block generated-image-card"><div class="script-block-header" style="justify-content:space-between"><span style="font-size:12px;color:#999">📷 生成图片</span><div style="display:flex;gap:4px"><button class="gen-replace-btn" onclick="replaceImage(' + msgIdx + ',' + partIdx + ',\'' + data.filename + '\',\'' + newDesc.replace(/'/g, "\\'") + '\')">🔄 替换</button><button class="cp-btn" onclick="copyGenImage(\'' + data.filename + '\',\'' + newDesc.replace(/'/g, "\\'") + '\')" title="复制图片到剪贴板">📋</button></div></div><div class="generated-image-content"><img src="/api/generated_images/' + data.filename + '" alt="' + escapeHtml(newDesc) + '" onclick="window.open(this.src)" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer"><div class="generated-image-desc">' + escapeHtml(newDesc) + '</div>' + simHtml + '</div></div>';
-                } else {
-                  renderMessages();
-                }
-                showToast('✅ 图片已替换');
-              } catch(e) {
-                showToast('替换失败: ' + e.message);
-                // 只重新渲染当前消息，不全部重置
-                renderMessages();
-              }
-    }
 
   let recentlyUploadedImageIds = [];
 // 最近上传的图片信息（id + description）

@@ -8,7 +8,6 @@ import os
 import sys
 import json
 import webbrowser
-from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -58,222 +57,11 @@ from knowledge import (list_documents, get_document, add_document,
 from llm_client import generate_script, generate_script_stream
 import config_manager as cfg
 
-# ===== 图片生成（Agnes Image API） =====
+# ===== 生成图片静态服务 =====
 GENERATED_IMAGES_DIR = (cfg.DATA_DIR / "generated_images").resolve()
-
-# 图片描述→文件名映射（持久化，避免前端 localStorage 丢失）
-IMAGE_MAP_FILE = (cfg.DATA_DIR / "image_map.json").resolve()
 
 # 占位 SVG，当图片文件不存在时返回（避免前端 404 报错）
 PLACEHOLDER_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect width="200" height="200" fill="#f0f0f0"/><text x="100" y="95" text-anchor="middle" fill="#ccc" font-size="48" font-family="sans-serif">?</text><text x="100" y="125" text-anchor="middle" fill="#aaa" font-size="12" font-family="sans-serif">\u56fe\u7247\u4e0d\u5b58\u5728</text></svg>'
-
-# ===== 图片描述→文件名映射（持久化，避免前端 localStorage 丢失） =====
-def _load_image_map():
-    """加载图片描述→文件名映射"""
-    if IMAGE_MAP_FILE.exists():
-        try:
-            return json.loads(IMAGE_MAP_FILE.read_text(encoding='utf-8'))
-        except:
-            pass
-    return {}
-
-def _save_image_map_entry(desc: str, filename: str):
-    """保存一条图片描述→文件名映射"""
-    mapping = _load_image_map()
-    mapping[desc] = filename
-    IMAGE_MAP_FILE.write_text(json.dumps(mapping, ensure_ascii=False, indent=2), encoding='utf-8')
-
-def _replace_pending_images_in_content(content: str) -> str:
-    """将消息中的 [生成图片:描述] 替换为 [AI图片:filename:描述]（如果映射存在）"""
-    import re
-    mapping = _load_image_map()
-    def replacer(match):
-        desc = match.group(1).strip()
-        filename = mapping.get(desc)
-        if filename:
-            return f'[AI图片:{filename}:{desc}]'
-        return match.group(0)
-    return re.sub(r'\[生成图片:\s*(.*?)\]', replacer, content)
-
-def _make_img_session():
-    """创建可用的 requests Session（禁用SSL验证+禁用代理）"""
-    import requests
-    import urllib3
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    sess = requests.Session()
-    sess.verify = False
-    sess.trust_env = False
-    return sess
-
-
-async def _generate_image(description: str) -> str:
-    """调用图片生成API - 多provider轮询，支持过期自动跳过"""
-    import requests
-    import uuid
-    from datetime import datetime
-    import asyncio
-    import time
-
-    providers = cfg.get_image_gen_config()
-    if not providers or len(providers) == 0:
-        return ""
-
-    GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
-
-    # 从配置读取图片生成提示词模板
-    img_gen_prompt_tpl = cfg.get_prompts().get("image_generation", "一张简洁的减肥瘦身科普知识图，白色背景为主，用中文清晰大字展示以下内容：{description}。风格扁平化、卡通、配色清新。")
-
-    def _add_text_overlay(img_path: Path, desc: str):
-        try:
-            img = Image.open(img_path).convert("RGBA")
-            w, h = img.size
-            fp = "C:/Windows/Fonts/msyh.ttc"
-            fpb = "C:/Windows/Fonts/msyhbd.ttc"
-            if not os.path.exists(fp):
-                fp = fpb = "C:/Windows/Fonts/simfang.ttf"
-            tf = ImageFont.truetype(fpb, int(h * 0.045))
-            bf = ImageFont.truetype(fp, int(h * 0.028))
-            ov = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-            d = ImageDraw.Draw(ov)
-            bh = int(h * 0.35); by = h - bh
-            for i in range(bh):
-                d.rectangle([0, by + i, w, by + i + 1], fill=(255, 255, 255, int(180 * i / bh)))
-            parts = desc.replace("\n", " ").strip().split("\u3002")
-            title = parts[0].strip() if parts else desc
-            body = "\u3002".join(parts[1:]).strip()[:200] if len(parts) > 1 else ""
-            mg = int(w * 0.05); ty = by + int(h * 0.03)
-            bb = tf.getbbox(title)
-            d.rectangle([mg - 4, ty - 2, mg + bb[2] - bb[0] + 4, ty + bb[3] - bb[1] + 4], fill=(64, 150, 255, 200))
-            d.text((mg, ty), title, fill=(255, 255, 255), font=tf)
-            if body:
-                by2 = ty + bb[3] - bb[1] + int(h * 0.025); mw = w - mg * 2
-                bl = []
-                for p in body.split("\u3002"):
-                    p = p.strip()
-                    if not p: continue
-                    l = ""
-                    for c in p:
-                        tl = l + c; bx = bf.getbbox(tl)
-                        if bx[2] - bx[0] > mw and l:
-                            bl.append(l + "\u3002"); l = c
-                        else: l = tl
-                    if l: bl.append(l + "\u3002")
-                for l in bl[:6]:
-                    d.text((mg, by2), l, fill=(50, 50, 50), font=bf)
-                    by2 += int(h * 0.038)
-                    if by2 > h - mg: break
-            Image.alpha_composite(img, ov).convert("RGB").save(img_path, quality=95)
-        except Exception as e:
-            print(f"[Pillow overlay error] {e}")
-    def _sync_generate(provider: dict) -> str:
-        """同步调用单个图片生成API"""
-        sess = _make_img_session()
-        model = provider["model"]
-        api_key = provider["api_key"]
-        base_url = provider["base_url"].rstrip("/")
-        size = provider.get("size", "1024x1024")
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-        # 用配置中的模板，替换 {description} 为实际描述
-        payload = {
-            "model": model,
-            "prompt": img_gen_prompt_tpl.replace("{description}", description),
-            "size": size,
-            "n": 1
-        }
-        try:
-            resp = sess.post(
-                f"{base_url}/images/generations",
-                json=payload, headers=headers, timeout=120
-            )
-            if resp.status_code != 200:
-                return f"HTTP_ERROR:{resp.status_code}:{resp.text[:100]}"
-
-            data = resp.json()
-            if "data" not in data or not data["data"]:
-                return "NO_IMAGE_DATA"
-
-            image_url = data["data"][0].get("url", "")
-            if not image_url:
-                return "EMPTY_URL"
-
-            dl = sess.get(image_url, timeout=120)
-            if dl.status_code != 200:
-                return f"DL_ERROR:HTTP {dl.status_code}"
-
-            ext = ".png"
-            ct = dl.headers.get("content-type", "")
-            if "jpeg" in ct or "jpg" in ct:
-                ext = ".jpg"
-            elif "webp" in ct:
-                ext = ".webp"
-
-            filename = f"gen_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
-            local_path = GENERATED_IMAGES_DIR / filename
-            local_path.write_bytes(dl.content)
-            _add_text_overlay(local_path, description)
-            return f"SUCCESS:{filename}"
-
-        except requests.exceptions.Timeout:
-            return "TIMEOUT"
-        except Exception as e:
-            return f"ERROR:{str(e)[:80]}"
-
-    last_error = ""
-    for provider in providers:
-        model = provider["model"]
-        t0 = time.time()
-        result = await asyncio.get_event_loop().run_in_executor(None, _sync_generate, provider)
-        elapsed = time.time() - t0
-        if result.startswith("SUCCESS:"):
-            filename = result.split(":", 1)[1]
-            # 写日志
-            try:
-                import logger
-                logger.log_event("image_gen", "generate", model=model, success=True, duration=round(elapsed, 2))
-            except Exception:
-                pass
-            return f"/api/generated_images/{filename}"
-        else:
-            last_error = f"{model}: {result}"
-            # 写失败日志
-            try:
-                import logger
-                logger.log_event("image_gen", "generate", model=model, success=False, duration=round(elapsed, 2), error=result[:80])
-            except Exception:
-                pass
-
-    print(f"⚠️ 图片生成全部失败: {last_error}")
-    return ""
-
-
-async def _post_process_script(script: str) -> str:
-    """处理话术中的 [生成图片: 描述] 标记，替换为安全标记 [AI图片:文件名:描述]（已废弃，前端按需逐张生图）"""
-    import re
-    pattern = r'\[生成图片:\s*(.*?)\]'
-
-    # 找到所有匹配，逐个异步替换
-    result = []
-    last_end = 0
-    for match in re.finditer(pattern, script):
-        # 添加匹配前的文本
-        result.append(script[last_end:match.start()])
-        desc = match.group(1).strip()
-        if desc:
-            img_path = await _generate_image(desc)
-            if img_path:
-                filename = img_path.rsplit("/", 1)[-1] if "/" in img_path else img_path
-                result.append(f"\n\n[AI图片:{filename}:{desc}]\n\n")
-            else:
-                result.append(f"\n\n【图片生成失败: {desc}】\n\n")
-        last_end = match.end()
-    # 添加剩余文本
-    result.append(script[last_end:])
-
-    return "".join(result)
 
 
 @asynccontextmanager
@@ -284,8 +72,6 @@ async def lifespan(app: FastAPI):
     print(f"[小赛助手 v2] 启动成功")
     print(f"   端口: {cfg.load_config()['app']['port']}")
     print(f"   数据目录: {cfg.DATA_DIR}")
-    # 确保生成图片目录存在
-    GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     
     # ===== 启动时 API 健康检查 =====
     try:
@@ -385,16 +171,6 @@ app.add_middleware(
 
 
 # ==================== API 端点 ====================
-
-@app.get("/api/generated_images/{filename}")
-async def api_get_generated_image(filename: str):
-    """获取AI生成的图片"""
-    import os
-    from fastapi.responses import FileResponse, Response
-    filepath = GENERATED_IMAGES_DIR / filename
-    if not filepath.exists():
-        return Response(content=PLACEHOLDER_SVG, media_type="image/svg+xml")
-    return FileResponse(str(filepath))
 
 @app.get("/api/health")
 async def health():
@@ -847,10 +623,6 @@ async def api_get_messages(customer_id: int):
     if not customer:
         raise HTTPException(status_code=404, detail="客户不存在")
     messages = get_messages(customer_id)
-    # 自动替换 [生成图片:...] 为 [AI图片:filename:...]
-    for m in messages:
-        if "[生成图片:" in m.get("content", ""):
-            m["content"] = _replace_pending_images_in_content(m["content"])
     return {"messages": messages}
 
 
@@ -895,6 +667,94 @@ async def api_update_message(msg_id: int, data: dict = Body(...)):
 
 
 # ===== 话术生成 =====
+
+def _collect_effective_script_context(recent_text: str, customer: dict, analysis_tags: list, recent: str):
+    """分析最近消息：学习有效话术 + 收集有效话术参考与反馈分析。
+
+    返回 (effective_refs, feedback_analysis)
+    """
+    effective_refs = []
+    feedback_analysis = ""
+    try:
+        if recent_text:
+            import re
+            # 按发送者分割消息块（不是按空行，因为话术多段）
+            # 消息头模式：人名 + 日期时间（兼容 2026/08/11 与 08/11 两种格式）
+            block_pattern = r'(?:^|\n)(?=[^\n]+ (?:\d{4}[/-])?\d{1,2}[/-]\d{1,2} \d{1,2}:\d{2})'
+            raw_blocks = re.split(block_pattern, recent_text.strip())
+            blocks = [b.strip() for b in raw_blocks if b.strip()]
+            if len(blocks) >= 2:
+                C_block = blocks[-1]
+                B_block = blocks[-2]
+                if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
+                    B_lines = B_block.split("\n")
+                    B_content = "\n".join(B_lines[1:]).strip() if len(B_lines) > 1 else B_block
+                    C_lines = C_block.split("\n")
+                    C_content = "\n".join(C_lines[1:]).strip() if len(C_lines) > 1 else C_block
+                    if len(B_content) > 10:
+                        score = 0
+                        response_type = "中性"
+                        scenario = "效果确认"
+                        buy_words = ["买", "付款", "多少钱", "下单", "转账", "支付", "收款码", "怎么付"]
+                        positive_words = ["好的", "瘦", "效果", "谢谢", "继续", "行", "可以", "不错", "有效", "轻了"]
+                        reject_words = ["不", "别", "不用", "不要", "不需要", "算了", "再考虑", "太贵", "没钱", "自己来"]
+                        for w in buy_words:
+                            if w in C_content:
+                                score += 3
+                                response_type = "成交"
+                                scenario = "复购推荐"
+                                break
+                        if response_type == "中性":
+                            for w in positive_words:
+                                if w in C_content:
+                                    score += 2
+                                    response_type = "积极"
+                                    break
+                        if response_type == "中性":
+                            for w in reject_words:
+                                if w in C_content:
+                                    score -= 1
+                                    response_type = "消极"
+                                    break
+                        if response_type == "中性" and len(C_content) > 0:
+                            score += 1
+                        if 30 <= len(B_content) <= 600:
+                            score += 1
+                        if "?" in B_content or "？" in B_content or "对不对" in B_content or "是吧" in B_content:
+                            score += 1
+                        if any(c.isdigit() for c in B_content):
+                            score += 1
+                        if "开心" in B_content or "高兴" in B_content or "放心" in B_content or "心疼" in B_content or "感动" in B_content:
+                            score += 1
+                        if "排油" in B_content or "排便" in B_content or "油脂" in B_content:
+                            scenario = "排油跟进"
+                        elif "瘦" in B_content or "体重" in B_content or "斤" in B_content:
+                            scenario = "效果确认"
+                        elif "买" in B_content or "续费" in B_content or "优惠" in B_content or "活动" in B_content:
+                            scenario = "复购推荐"
+                        elif "贵" in B_content or "价格" in B_content or "钱" in B_content:
+                            scenario = "异议处理"
+                        elif "阶段" in B_content or "周期" in B_content or "过程" in B_content:
+                            scenario = "科普教育"
+                        if score >= 2:
+                            from effective_scripts import add_effective_script
+                            ctype = customer.get("customer_type", "")
+                            ctype_label = {"package": "套餐客户", "treatment": "疗程客户", "cid": "CID客户"}.get(ctype, "CID客户")
+                            add_effective_script(B_content[:500], scenario, ctype_label, 1, score)
+                        feedback_analysis = f"\n【话术效果分析】\n上次发送: {B_content[:100]}\n客户回应: {C_content[:100]}\n评分: {score} ({response_type})"
+        try:
+            from effective_scripts import search_effective_scripts_by_scenario
+            scenario_keywords = analysis_tags[0] if analysis_tags else ""
+            if not scenario_keywords:
+                scenario_keywords = (recent or "")[:20]
+            refs = search_effective_scripts_by_scenario(scenario_keywords, customer.get("customer_type", ""), top_k=3)
+            if refs:
+                effective_refs = [f"【有效话术参考】{r['content'][:60]}（评分{r['score']}，有效{r['effective_count']}次）" for r in refs]
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return effective_refs, feedback_analysis
 
 @app.post("/api/generate")
 async def api_generate_script(data: dict = Body(...)):
@@ -1056,88 +916,9 @@ async def api_generate_script(data: dict = Body(...)):
         tag_hint = "\n\n【本次分析方向】: " + "、".join(analysis_tags)
         parsed_recent = parsed_recent + tag_hint
     # ===== 有效话术分析 + 参考 =====
-    effective_refs = []
-    feedback_analysis = ""
-    try:
-        recent_text = parsed_recent or recent or ""
-        if recent_text:
-            # 按发送者分割消息块（不是按空行，因为话术多段）
-            import re
-            # 消息头模式：人名 + 日期时间
-            block_pattern = r'(?:^|\n)(?=[^\n]+ \d{1,2}/\d{1,2} \d{1,2}:\d{2})'
-            raw_blocks = re.split(block_pattern, recent_text.strip())
-            blocks = [b.strip() for b in raw_blocks if b.strip()]
-            if len(blocks) >= 2:
-                C_block = blocks[-1]
-                B_block = blocks[-2]
-        if "张兆渊" in B_block[:30] and "张兆渊" not in C_block[:30]:
-                    B_lines = B_block.split("\n")
-                    B_content = "\n".join(B_lines[1:]).strip() if len(B_lines) > 1 else B_block
-                    C_lines = C_block.split("\n")
-                    C_content = "\n".join(C_lines[1:]).strip() if len(C_lines) > 1 else C_block
-                    if len(B_content) > 10:
-                        score = 0
-                        response_type = "中性"
-                        scenario = "效果确认"
-                        buy_words = ["买", "付款", "多少钱", "下单", "转账", "支付", "收款码", "怎么付"]
-                        positive_words = ["好的", "瘦", "效果", "谢谢", "继续", "行", "可以", "不错", "有效", "轻了"]
-                        reject_words = ["不", "别", "不用", "不要", "不需要", "算了", "再考虑", "太贵", "没钱", "自己来"]
-                        for w in buy_words:
-                            if w in C_content:
-                                score += 3
-                                response_type = "成交"
-                                scenario = "复购推荐"
-                                break
-                        if response_type == "中性":
-                            for w in positive_words:
-                                if w in C_content:
-                                    score += 2
-                                    response_type = "积极"
-                                    break
-                        if response_type == "中性":
-                            for w in reject_words:
-                                if w in C_content:
-                                    score -= 1
-                                    response_type = "消极"
-                                    break
-                        if response_type == "中性" and len(C_content) > 0:
-                            score += 1
-                        if 30 <= len(B_content) <= 600:
-                            score += 1
-                        if "?" in B_content or "？" in B_content or "对不对" in B_content or "是吧" in B_content:
-                            score += 1
-                        if any(c.isdigit() for c in B_content):
-                            score += 1
-                        if "开心" in B_content or "高兴" in B_content or "放心" in B_content or "心疼" in B_content or "感动" in B_content:
-                            score += 1
-                        if "排油" in B_content or "排便" in B_content or "油脂" in B_content:
-                            scenario = "排油跟进"
-                        elif "瘦" in B_content or "体重" in B_content or "斤" in B_content:
-                            scenario = "效果确认"
-                        elif "买" in B_content or "续费" in B_content or "优惠" in B_content or "活动" in B_content:
-                            scenario = "复购推荐"
-                        elif "贵" in B_content or "价格" in B_content or "钱" in B_content:
-                            scenario = "异议处理"
-                        elif "阶段" in B_content or "周期" in B_content or "过程" in B_content:
-                            scenario = "科普教育"
-                        if score >= 2:
-                            from effective_scripts import add_effective_script
-                            ctype = customer.get("customer_type", "")
-                            ctype_label = {"package": "套餐客户", "treatment": "疗程客户", "cid": "CID客户"}.get(ctype, "CID客户")
-                            add_effective_script(B_content[:500], scenario, ctype_label, 1, score)
-                        feedback_analysis = f"\n【话术效果分析】\n上次发送: {B_content[:100]}\n客户回应: {C_content[:100]}\n评分: {score} ({response_type})"
-        try:
-            from effective_scripts import search_effective_scripts_by_scenario
-            scenario_keywords = analysis_tags[0] if analysis_tags else ""
-            if not scenario_keywords:
-                scenario_keywords = (recent or "")[:20]
-            refs = search_effective_scripts_by_scenario(scenario_keywords, customer.get("customer_type", ""), top_k=3)
-            if refs:
-                effective_refs = [f"【有效话术参考】{r['content'][:60]}（评分{r['score']}，有效{r['effective_count']}次）" for r in refs]
-        except Exception:
-            pass
-    except Exception:
-        pass    # ===== 调用LLM生成话术 =====
+    recent_text = parsed_recent or recent or ""
+    effective_refs, feedback_analysis = _collect_effective_script_context(recent_text, customer, analysis_tags, recent)
+    # ===== 调用LLM生成话术 =====
     result = await generate_script(
             customer_info=customer,
             recent_messages=parsed_recent,
@@ -1174,7 +955,6 @@ async def api_generate_script(data: dict = Body(...)):
             if img.get('id'):
                 try: increment_image_use_count(img['id'])
                 except: pass
-    # 不调 _post_process_script，前端按需逐张生图
     return {
     'script': result,
     'pending_images': [{'description': d.strip()} for d in pending_images if d.strip()],
@@ -1310,6 +1090,10 @@ async def api_generate_script_stream(request: Request, data: dict = Body(...)):
 
     degraded_reason = search_data.get('degraded_reason')
 
+    # ===== 有效话术分析 + 参考 =====
+    recent_text = parsed_recent or recent or ""
+    effective_refs, feedback_analysis = _collect_effective_script_context(recent_text, customer, analysis_tags, recent)
+
     async def event_generator():
         # 先发 degraded_reason（如果有）
         if degraded_reason:
@@ -1324,15 +1108,11 @@ async def api_generate_script_stream(request: Request, data: dict = Body(...)):
             settings=settings,
             current_time=current_time,
             image_results=image_results,
-            local_image_matches=local_image_matches
+            local_image_matches=local_image_matches,
+            effective_refs=effective_refs,
+            feedback_analysis=feedback_analysis
         ):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-            
-            # 如果 event 是 image_pending，立即触发后台图片生成
-            if event.get("type") == "image_pending":
-                desc = event.get("description", "")
-                if desc:
-                    asyncio.create_task(_generate_image_async(desc))
 
     return StreamingResponse(
         event_generator(),
@@ -1343,84 +1123,6 @@ async def api_generate_script_stream(request: Request, data: dict = Body(...)):
             "X-Accel-Buffering": "no",
         }
     )
-
-
-async def _generate_image_async(description: str):
-    """后台异步生成图片，结果存入文件系统供前端轮询"""
-    try:
-        img_path = await _generate_image(description)
-        if img_path:
-            filename = img_path.rsplit("/", 1)[-1] if "/" in img_path else img_path
-            # 写一个标记文件，前端可以轮询到
-            flag_path = GENERATED_IMAGES_DIR / f".done_{filename}.json"
-            with open(flag_path, "w", encoding="utf-8") as f:
-                json.dump({"filename": filename, "description": description, "url": img_path}, f)
-    except Exception:
-        pass
-
-
-@app.post("/api/generate_image")
-async def api_generate_single_image(data: dict = Body(...)):
-    """生成单张图片（由前端按需调用，含取消能力）"""
-    description = data.get("description", "")
-    if not description:
-        raise HTTPException(status_code=400, detail="描述不能为空")
-    img_path = await _generate_image(description)
-    if not img_path:
-        raise HTTPException(status_code=500, detail="图片生成失败（API不可达或网络超时）")
-    filename = img_path.rsplit("/", 1)[-1] if "/" in img_path else img_path
-    # 保存描述→文件名映射
-    _save_image_map_entry(description, filename)
-    return {"filename": filename, "url": img_path}
-
-
-@app.post("/api/image_map")
-async def api_save_image_map(data: dict = Body(...)):
-    """前端主动保存图片描述→文件名映射（用于前端生成图片后同步到后端）"""
-    desc = data.get("desc", "")
-    filename = data.get("filename", "")
-    if desc and filename:
-        _save_image_map_entry(desc, filename)
-        return {"status": "ok"}
-    return {"status": "ignored"}
-
-@app.post("/api/generate-image-prompt")
-async def api_generate_image_prompt(data: dict = Body(...)):
-    """生成超详细的图片提示词（结合话术上下文）"""
-    description = data.get("description", "")
-    context = data.get("context", "")
-    if not description:
-        raise HTTPException(status_code=400, detail="描述不能为空")
-
-    from llm_client import get_llm_client
-    import httpx
-    config = get_llm_client()
-    api_key = config["api_key"]
-    base_url = config["base_url"]
-    model = config["model"]
-
-    system_prompt = "你是一个专业的减肥瘦身科普图片提示词工程师。请根据用户的需求，将简单的图片描述扩展为一段超详细的图片生成提示词（中文，50-100字）。要求：1. 画面元素具体 2. 配色建议（清新/温馨/专业）3. 文字内容（如果有，写具体文案）4. 排版建议 5. 风格（扁平化/卡通/插画/真实照片风格）"
-
-    user_prompt = f"【话术上下文】\n{context[:300]}\n\n【原始图片描述】\n{description}\n\n请基于以上上下文，生成一段超详细的图片提示词。"
-
-    try:
-        async with httpx.AsyncClient(http2=False, timeout=120, trust_env=False) as client:
-            resp = await client.post(
-                f"{base_url.rstrip('/')}/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ], "temperature": 0.7, "max_tokens": 512}
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                detailed = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                return {"detailed_prompt": detailed}
-            else:
-                return {"detailed_prompt": description, "error": f"HTTP {resp.status_code}"}
-    except Exception as e:
-        return {"detailed_prompt": description, "error": str(e)[:200]}
 
 
     # ===== 搜索状态 =====
@@ -3566,50 +3268,49 @@ async def api_delete_faq(faq_id: int):
 
 @app.get("/api/stats")
 async def api_stats():
-    """获取数据统计"""
-    from database import get_db
-    conn = get_db()
+    """获取数据统计（跨库：主库/messages库/向量库）"""
+    from database import get_db, get_messages_db, get_vectors_db
+    from datetime import datetime, timedelta
+
+    # 主库：customers / image_index
+    main_conn = get_db()
+    # 消息库：messages
+    msg_conn = get_messages_db()
+    # 向量库：knowledge_chunks（文本元数据实际存于向量库）
+    vec_conn = None
+    try:
+        vec_conn = get_vectors_db()
+    except Exception:
+        pass
+
     try:
         # 客户总数
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM customers")
-        customer_count = cursor.fetchone()["cnt"]
-        
+        customer_count = main_conn.execute("SELECT COUNT(*) as cnt FROM customers").fetchone()["cnt"]
+
         # 消息总数
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM messages")
-        message_count = cursor.fetchone()["cnt"]
-        
+        message_count = msg_conn.execute("SELECT COUNT(*) as cnt FROM messages").fetchone()["cnt"]
+
         # 今日消息数
-        from datetime import datetime
         today = datetime.now().strftime("%Y-%m-%d")
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM messages WHERE timestamp LIKE ?", (f"{today}%",))
-        today_msg_count = cursor.fetchone()["cnt"]
-        
-        # 知识库文档数
-        cursor = conn.execute("SELECT COUNT(DISTINCT doc_id) as cnt FROM knowledge_chunks")
-        doc_count = cursor.fetchone()["cnt"]
-        
-        # 知识库 chunks 数
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM knowledge_chunks")
-        chunk_count = cursor.fetchone()["cnt"]
-        
+        today_msg_count = msg_conn.execute("SELECT COUNT(*) as cnt FROM messages WHERE timestamp LIKE ?", (f"{today}%",)).fetchone()["cnt"]
+
+        # 知识库文档数 / chunks 数
+        doc_count = 0
+        chunk_count = 0
+        if vec_conn is not None:
+            try:
+                doc_count = vec_conn.execute("SELECT COUNT(DISTINCT doc_id) as cnt FROM knowledge_chunks").fetchone()["cnt"]
+                chunk_count = vec_conn.execute("SELECT COUNT(*) as cnt FROM knowledge_chunks").fetchone()["cnt"]
+            except Exception:
+                pass
+
         # 图片索引数
-        cursor = conn.execute("SELECT COUNT(*) as cnt FROM image_index")
-        image_count = cursor.fetchone()["cnt"]
-        
-        # 图片生成数（统计 generated_images 目录）
-        import os
-        from pathlib import Path
-        gen_dir = Path(cfg.DATA_DIR) / "generated_images"
-        gen_count = 0
-        if gen_dir.exists():
-            gen_count = len([f for f in gen_dir.iterdir() if f.suffix.lower() in ('.png', '.jpg', '.jpeg', '.gif', '.webp')])
-        
+        image_count = main_conn.execute("SELECT COUNT(*) as cnt FROM image_index").fetchone()["cnt"]
+
         # 客户活跃度（最近7天有消息的客户数）
-        from datetime import timedelta
         week_ago = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-        cursor = conn.execute("SELECT COUNT(DISTINCT customer_id) as cnt FROM messages WHERE timestamp > ?", (week_ago,))
-        active_customers = cursor.fetchone()["cnt"]
-        
+        active_customers = msg_conn.execute("SELECT COUNT(DISTINCT customer_id) as cnt FROM messages WHERE timestamp > ?", (week_ago,)).fetchone()["cnt"]
+
         return {
             "customer_count": customer_count,
             "message_count": message_count,
@@ -3617,12 +3318,14 @@ async def api_stats():
             "doc_count": doc_count,
             "chunk_count": chunk_count,
             "image_count": image_count,
-            "generated_image_count": gen_count,
             "active_customers_7d": active_customers,
             "stats_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
     finally:
-        conn.close()
+        main_conn.close()
+        msg_conn.close()
+        if vec_conn is not None:
+            vec_conn.close()
 
 if __name__ == "__main__":
     start_server()
