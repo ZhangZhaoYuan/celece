@@ -534,20 +534,49 @@ def delete_customer(customer_id):
 
 def get_messages(customer_id, session_id=None):
     """获取客户的所有消息"""
-    conn = get_messages_db()
-    if session_id:
-        cursor = conn.execute(
-            "SELECT * FROM messages WHERE customer_id=? AND session_id=? ORDER BY timestamp ASC",
-            (customer_id, session_id)
-        )
-    else:
-        cursor = conn.execute(
-            "SELECT * FROM messages WHERE customer_id=? ORDER BY timestamp ASC",
-            (customer_id,)
-        )
-    messages = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return messages
+    # 尝试从 customers.db 读取（旧版）
+    conn = get_db()
+    try:
+        if session_id:
+            cursor = conn.execute(
+                "SELECT * FROM messages WHERE customer_id=? AND session_id=? ORDER BY timestamp ASC",
+                (customer_id, session_id)
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT * FROM messages WHERE customer_id=? ORDER BY timestamp ASC",
+                (customer_id,)
+            )
+        messages = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        # 如果找到消息，直接返回
+        if messages:
+            return messages
+    except:
+        pass
+    finally:
+        if 'conn' in locals():
+            conn.close()
+    
+    # 如果 customers.db 没有，尝试 messages.db（新版）
+    try:
+        conn = get_messages_db()
+        if session_id:
+            cursor = conn.execute(
+                "SELECT * FROM messages WHERE customer_id=? AND session_id=? ORDER BY timestamp ASC",
+                (customer_id, session_id)
+            )
+        else:
+            cursor = conn.execute(
+                "SELECT * FROM messages WHERE customer_id=? ORDER BY timestamp ASC",
+                (customer_id,)
+            )
+        messages = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return messages
+    except Exception as e:
+        print(f"Error reading messages: {e}")
+        return []
 
 
 def add_message(customer_id, role, content, timestamp="", session_id=""):
