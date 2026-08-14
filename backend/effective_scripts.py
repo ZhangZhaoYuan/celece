@@ -133,21 +133,123 @@ def revectorize_script(script_id):
 
 
 def search_effective_scripts_by_scenario(scenario, customer_type="", top_k=5):
-    """搜索相似场景的有效话术，按评分排序"""
+    """搜索相似场景的有效话术，支持向量语义搜索和关键词匹配"""
     conn = get_db()
-    conditions = ["scenario=? OR ?=''"]
-    params = [scenario, scenario]
-    if customer_type:
-        conditions.append("(customer_type=? OR customer_type='')")
-        params.append(customer_type)
-    where = " AND ".join(conditions)
-    cursor = conn.execute(
-        f"SELECT * FROM effective_scripts WHERE {where} AND vector_status='done' ORDER BY score DESC, effective_count DESC LIMIT ?",
-        params + [top_k]
-    )
-    scripts = [dict(r) for r in cursor.fetchall()]
+
+    # 1. 尝试向量搜索
+    vec_results = []
+    try:
+        from knowledge import _get_embedding as get_embedding, _embedding_available
+
+        if _embedding_available and scenario:
+            query_vec = get_embedding(scenario)
+            if query_vec:
+                from knowledge import _get_vec_conn, _vec_to_str
+                vconn = _get_vec_conn()
+                vcur = vconn.cursor()
+                vec_str = _vec_to_str(query_vec)
+                try:
+                    # 先查effective_vectors表是否存在
+                    vcur.execute("SELECT 1 FROM effective_vectors LIMIT 1")
+                    rows = vcur.execute(
+                        """
+                        SELECT ev.id as vec_id, ev.distance
+                        FROM effective_vectors ev
+                        WHERE ev.vector MATCH ? AND k = ?
+                        ORDER BY ev.distance
+                        """,
+                        (vec_str, top_k * 2)
+                    ).fetchall()
+                    for rank, row in enumerate(rows):
+                        distance = row["distance"]
+                        score = max(0, 1.0 - distance / 2.0)
+                        vec_id = row["vec_id"]
+                        if score > 0.3:  # 阈值过滤
+                            # 通过映射表获取script_id
+                            vcur.execute(
+                                "SELECT script_id FROM effective_scripts_vector_map WHERE vec_id=?",
+                                (vec_id,)
+                            )
+                            map_row = vcur.fetchone()
+                            if map_row:
+                                script = conn.execute(
+                                    "SELECT * FROM effective_scripts WHERE id = ?",
+                                    (map_row["script_id"],)
+                                ).fetchone()
+                                if script:
+                                    vec_results.append({
+                                        **dict(script),
+                                        "_search_score": round(score, 4),
+                                        "_search_method": "vector"
+                                    })
+                    vconn.close()
+                except sqlite3.OperationalError:
+                    # 表不存在，忽略向量搜索结果
+                    pass
+    except Exception as e:
+        pass
+
+    # 2. 关键词兜底搜索（当向量搜索结果为空或分数过低时）
+    if not vec_results or len(vec_results) < top_k // 2:
+        # 提取场景关键词
+        keywords = []
+        if scenario:
+            # 常见场景关键词映射
+            scenario_map = {
+                "体重上涨": ["体重", "上涨", "增加", "涨秤"],
+                "不回复": ["不回复", "没回复", "沉默", "不理"],
+                "套餐推荐": ["套餐", "推荐", "买", "购买", "下单"],
+                "减肥案例": ["案例", "成功", "效果", "反馈"],
+                "排油跟进": ["排油", "排便", "油脂", "拉肚子"],
+                "效果确认": ["瘦了", "体重", "斤", "数据", "效果"],
+                "复购推荐": ["复购", "续费", "续单", "再买"],
+                "异议处理": ["贵", "价格", "钱", "太贵", "划算"],
+            }
+            for kw, synonyms in scenario_map.items():
+                if kw in scenario or any(s in scenario for s in synonyms):
+                    keywords.extend(synonyms)
+            if not keywords:
+                keywords = [w for w in scenario.split() if len(w) > 1][:5]
+        else:
+            keywords = [w for w in scenario.split() if len(w) > 1][:5] if scenario else []
+
+        # 关键词搜索
+        conditions = ["vector_status='done'"]
+        params = []
+        if customer_type:
+            conditions.append("(customer_type=? OR customer_type='')")
+            params.append(customer_type)
+        if keywords:
+            kw_conditions = " OR ".join(["content LIKE ?" for _ in keywords])
+            conditions.append(f"({kw_conditions})")
+            params.extend([f"%{kw}%" for kw in keywords])
+
+        where = " AND ".join(conditions)
+        cursor = conn.execute(
+            f"SELECT * FROM effective_scripts WHERE {where} ORDER BY score DESC, effective_count DESC LIMIT ?",
+            params + [top_k]
+        )
+        kw_results = [dict(r) for r in cursor.fetchall()]
+        for r in kw_results:
+            r["_search_method"] = "keyword"
+    else:
+        kw_results = []
+
     conn.close()
-    return scripts
+
+    # 3. 合并结果（向量优先，去重）
+    seen_ids = set()
+    final_results = []
+    for r in vec_results:
+        if r["id"] not in seen_ids:
+            seen_ids.add(r["id"])
+            final_results.append(r)
+    for r in kw_results:
+        if r["id"] not in seen_ids:
+            seen_ids.add(r["id"])
+            final_results.append(r)
+
+    return final_results[:top_k]
 
 
 def dedup_effective_scripts():

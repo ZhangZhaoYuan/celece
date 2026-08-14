@@ -1,4 +1,4 @@
-﻿"""
+"""
 LLM API 调用客户端 - 兼容 OpenAI 格式的 API
 支持商汤/智谱/OpenRouter 等所有 OpenAI 兼容接口
 """

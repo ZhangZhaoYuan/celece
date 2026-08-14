@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 """
 小赛助手 v2 - FastAPI 后端服务
 赛乐赛瘦身产品销售助手
@@ -529,35 +529,35 @@ async def api_customer_profile(customer_id: int):
     customer = get_customer(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="客户不存在")
-    
+
     from database import get_db
     conn = get_db()
     try:
         # 消息统计
         cursor = conn.execute("SELECT COUNT(*) as cnt FROM messages WHERE customer_id=?", (customer_id,))
         msg_count = cursor.fetchone()["cnt"]
-        
+
         cursor = conn.execute("SELECT MIN(timestamp) as first, MAX(timestamp) as last FROM messages WHERE customer_id=?", (customer_id,))
         times = cursor.fetchone()
         first_msg = times["first"] or "无"
         last_msg = times["last"] or "无"
-        
+
         # 统计角色分布
         cursor = conn.execute("SELECT role, COUNT(*) as cnt FROM messages WHERE customer_id=? GROUP BY role", (customer_id,))
         role_stats = {r["role"]: r["cnt"] for r in cursor.fetchall()}
-        
+
         # 消息总数
         user_msgs = role_stats.get("user", 0)
         assistant_msgs = role_stats.get("assistant", 0)
-        
+
         # 最近10条消息摘要
         cursor = conn.execute("SELECT content, role, timestamp FROM messages WHERE customer_id=? ORDER BY timestamp DESC LIMIT 10", (customer_id,))
         recent = [dict(r) for r in cursor.fetchall()]
-        
+
         # 图片数
         cursor = conn.execute("SELECT COUNT(*) as cnt FROM customer_images WHERE customer_id=?", (customer_id,))
         img_count = cursor.fetchone()["cnt"] if cursor else 0
-        
+
         profile = {
             "customer_id": customer_id,
             "name": customer.get("name", ""),
@@ -578,6 +578,36 @@ async def api_customer_profile(customer_id: int):
         return profile
     finally:
         conn.close()
+
+
+@app.post("/api/customers/{customer_id}/analyze")
+async def api_analyze_customer(customer_id: int):
+    """分析客户画像并更新数据库"""
+    from customer_profile import analyze_customer_profile
+    profile = analyze_customer_profile(customer_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="客户不存在")
+    return {"status": "ok", "profile": profile}
+
+
+@app.get("/api/customers/{customer_id}/profile/analysis")
+async def api_get_customer_analysis(customer_id: int):
+    """获取客户画像分析结果（不更新）"""
+    from customer_profile import analyze_customer_profile
+    from database import get_customer
+    customer = get_customer(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="客户不存在")
+    profile = analyze_customer_profile(customer_id)
+    return {"profile": profile}
+
+
+@app.post("/api/customers/batch-analyze")
+async def api_batch_analyze_customers(limit: int = 50):
+    """批量分析客户画像"""
+    from customer_profile import batch_analyze_customers
+    result = batch_analyze_customers(limit)
+    return {"status": "ok", "result": result}
 # ===== 客户图片 =====
 
 @app.get("/api/customers/{customer_id}")
@@ -757,8 +787,13 @@ def _collect_effective_script_context(recent_text: str, customer: dict, analysis
     return effective_refs, feedback_analysis
 
 @app.post("/api/generate")
-async def api_generate_script(data: dict = Body(...)):
+async def api_generate_script(request: Request):
     """生成话术"""
+    # 手动解析请求体
+    try:
+        data = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"请求体解析失败: {str(e)}")
     customer_id = data.get("customer_id")
     recent = data.get("recent_messages", "")
     settings = data.get("settings", {})
@@ -918,6 +953,15 @@ async def api_generate_script(data: dict = Body(...)):
     # ===== 有效话术分析 + 参考 =====
     recent_text = parsed_recent or recent or ""
     effective_refs, feedback_analysis = _collect_effective_script_context(recent_text, customer, analysis_tags, recent)
+
+    # ===== 客户画像分析 =====
+    customer_profile = None
+    try:
+        from customer_profile import analyze_customer_profile
+        customer_profile = analyze_customer_profile(customer_id)
+    except Exception as e:
+        pass  # 分析失败不影响话术生成
+
     # ===== 调用LLM生成话术 =====
     result = await generate_script(
             customer_info=customer,
@@ -956,11 +1000,12 @@ async def api_generate_script(data: dict = Body(...)):
                 try: increment_image_use_count(img['id'])
                 except: pass
     return {
-    'script': result,
-    'pending_images': [{'description': d.strip()} for d in pending_images if d.strip()],
-    'pending_image_matches': pending_image_matches if pending_image_matches else None,
+        'script': result,
+        'pending_images': [{'description': d.strip()} for d in pending_images if d.strip()],
+        'pending_image_matches': pending_image_matches if pending_image_matches else None,
         'degraded_reason': search_data.get('degraded_reason'),
-        'local_image_matches': local_image_matches if local_image_matches else None
+        'local_image_matches': local_image_matches if local_image_matches else None,
+        'customer_profile': customer_profile
         }
 
 

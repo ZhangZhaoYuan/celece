@@ -733,7 +733,8 @@ def group_customers():
     """获取所有客户并按分类分组（组内按拼音排序）"""
     import sqlite3
     conn = get_db()
-    cursor = conn.execute('SELECT * FROM customers')
+    # 查询所有客户，按姓名排序
+    cursor = conn.execute('SELECT * FROM customers ORDER BY name COLLATE NOCASE')
     all_customers = [dict(row) for row in cursor.fetchall()]
     conn.close()
 
@@ -746,10 +747,23 @@ def group_customers():
         cat = classify_customer(c)
         groups[cat]['customers'].append(c)
         groups[cat]['count'] += 1
-    # 组内按拼音排序
+    
+    # 组内按拼音排序（使用_collate_nocase确保中文按拼音排序）
     for cat in groups:
-        groups[cat]['customers'].sort(key=lambda x: _pinyin_key(x.get('name', '')))
+        groups[cat]['customers'].sort(key=lambda x: _collate_nocase(x.get('name', '')))
+    
+    # 返回时保持原有分组顺序
     return [groups['cid'], groups['treatment'], groups['package']]
+
+
+def _collate_nocase(s):
+    """将字符串转为可比较的形式（处理中文）"""
+    try:
+        from pypinyin import pinyin, Style
+        return ''.join([item[0] for item in pinyin(s, style=Style.TONE3)])
+    except ImportError:
+        # 降级：直接使用小写
+        return s.lower()
 
 
 # ===== 图片索引功能 =====
@@ -1489,25 +1503,28 @@ def search_images_hybrid(query="", category="", limit=12):
     if _IMAGE_EMBEDDING_AVAILABLE and query:
         query_vec, _ = _get_image_embedding(query)
 
-    # 2. 匹配分类（语义 + 关键词 双路）
+    # 2. 匹配分类（语义 + 关键词 双路融合）
     cat_scores = {}  # category_name → score
     try:
+        # 获取所有分类
+        all_cats = [r[0] for r in conn.execute(
+            "SELECT DISTINCT ic.category_name FROM image_categories ic ORDER BY ic.category_name"
+        ).fetchall()]
+
         # 2a. 语义匹配分类描述
-        if query_vec:
+        if query_vec and all_cats:
             vconn = _get_image_vec_conn()
             vec_str = _vec_to_str(query_vec)
             cat_rows = vconn.execute(
                 "SELECT cpv.category_name, cpv.distance FROM category_profile_vectors cpv WHERE cpv.vector MATCH ? AND k=? ORDER BY cpv.distance",
-                (vec_str, limit * 2)
+                (vec_str, min(len(all_cats), limit * 2))
             ).fetchall()
             for r in cat_rows:
-                cat_scores[r["category_name"]] = max(0, 1.0 - r["distance"] / 2.0)
+                sem_score = max(0, 1.0 - r["distance"] / 2.0)
+                cat_scores[r["category_name"]] = sem_score
             vconn.close()
 
-        # 2b. 关键词匹配分类名
-        all_cats = [r[0] for r in conn.execute(
-            "SELECT DISTINCT ic.category_name FROM image_categories ic ORDER BY ic.category_name"
-        ).fetchall()]
+        # 2b. 关键词匹配分类名（加权）
         for kw in keywords:
             if len(kw) < 2: continue
             kw_clean = kw.replace('的','').replace('个','').replace('了','').replace('是','').replace('在','')
@@ -1522,24 +1539,20 @@ def search_images_hybrid(query="", category="", limit=12):
                     match_len = 2
                 if match_len > 0:
                     precision = min(len(kw_clean), len(cat_clean)) / max(len(kw_clean), len(cat_clean), 1)
-                    kw_score = 1.0 + match_len * 0.3 * precision
+                    kw_score = 0.5 + match_len * 0.15 * precision  # 降低关键词权重
                     cat_scores[cat] = max(cat_scores.get(cat, 0), kw_score)
 
-        # 2c. 语义匹配分类描述 + 关键词也匹配同一分类 → 加权
-        if query_vec:
-            vconn = _get_image_vec_conn()
-            cat_rows = vconn.execute(
-                "SELECT cpv.category_name, cpv.distance FROM category_profile_vectors cpv WHERE cpv.vector MATCH ? AND k=? ORDER BY cpv.distance",
-                (vec_str, limit * 2)
-            ).fetchall()
-            for r in cat_rows:
-                sem_score = max(0, 1.0 - r["distance"] / 2.0)
-                if r["category_name"] in cat_scores:
-                    # 语义+关键词都命中 → 加权
-                    cat_scores[r["category_name"]] += sem_score * 0.5
-                else:
-                    cat_scores[r["category_name"]] = sem_score * 0.6
-            vconn.close()
+        # 2c. 语义+关键词融合（如果两者都命中同一分类，提高权重）
+        if query_vec and cat_scores:
+            for cat_name, sem_score in list(cat_scores.items()):
+                # 检查是否有关键词也匹配到这个分类
+                has_kw_match = False
+                for kw in keywords:
+                    if len(kw) >= 2 and (kw in cat_name or cat_name in kw):
+                        has_kw_match = True
+                        break
+                if has_kw_match and sem_score > 0.3:
+                    cat_scores[cat_name] += sem_score * 0.3  # 融合加分
 
     except Exception:
         pass
@@ -1549,7 +1562,9 @@ def search_images_hybrid(query="", category="", limit=12):
     merged = []
 
     # 按分数从高到低遍历分类
-    for cat_name, _ in sorted(cat_scores.items(), key=lambda x: -x[1]):
+    for cat_name, score in sorted(cat_scores.items(), key=lambda x: -x[1]):
+        if score < 0.3:  # 跳过低分分类
+            continue
         imgs = conn.execute(
             "SELECT ii.* FROM image_index ii JOIN image_categories ic ON ii.id = ic.image_id WHERE ic.category_name=? AND ii.status='done' ORDER BY ii.img_order, ii.id LIMIT ?",
             (cat_name, limit)
@@ -1564,7 +1579,7 @@ def search_images_hybrid(query="", category="", limit=12):
                     img['tags'] = json.loads(img['tags']) if img.get('tags') else []
                 except (json.JSONDecodeError, TypeError):
                     img['tags'] = [t.strip() for t in img['tags'].split(',') if t.strip()] if img.get('tags') else []
-                img['_kw_score'] = cat_scores[cat_name]
+                img['_kw_score'] = score
                 img['_source'] = 'category_match'
                 img['_matched_category'] = cat_name
                 merged.append(img)
@@ -1582,7 +1597,7 @@ def search_images_hybrid(query="", category="", limit=12):
                     if img["id"] not in kw_seen and img["id"] not in seen_ids:
                         kw_seen.add(img["id"])
                         seen_ids.add(img["id"])
-                        img['_kw_score'] = 0.8
+                        img['_kw_score'] = 0.6
                         img['_source'] = 'keyword_fallback'
                         merged.append(img)
                         if len(merged) >= limit:
@@ -1593,7 +1608,7 @@ def search_images_hybrid(query="", category="", limit=12):
                     break
                 if img["id"] not in seen_ids:
                     seen_ids.add(img["id"])
-                    img['_kw_score'] = 1.0
+                    img['_kw_score'] = 0.8
                     img['_source'] = 'keyword_fallback'
                     merged.append(img)
 
