@@ -41,6 +41,7 @@ from database import (init_db, list_customers, get_customer, create_customer,
                       batch_delete_images, batch_tag_images,
                       add_image_record, copy_image_to_category,
                       increment_image_use_count)
+from message_parser import parse_and_split_messages, group_consecutive_messages
 from effective_scripts import (add_effective_script, list_effective_scripts,
                                get_effective_script_stats, delete_effective_script,
                                search_effective_scripts_by_scenario, dedup_effective_scripts,
@@ -666,11 +667,18 @@ async def api_parse_customer(data: dict = Body(...)):
 
 @app.get("/api/customers/{customer_id}/messages")
 async def api_get_messages(customer_id: int):
-    """获取客户消息历史"""
+    """获取客户消息历史（自动拆分微信导出记录）"""
     customer = get_customer(customer_id)
     if not customer:
         raise HTTPException(status_code=404, detail="客户不存在")
     messages = get_messages(customer_id)
+    
+    # 调用消息解析器拆分微信导出记录
+    if messages:
+        messages = parse_and_split_messages(messages)
+        # 按客户分组合并连续消息
+        messages = group_consecutive_messages(messages)
+    
     return {"messages": messages}
 
 
