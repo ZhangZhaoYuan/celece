@@ -558,6 +558,14 @@ async def api_customer_profile(customer_id: int):
         cursor = conn.execute("SELECT COUNT(*) as cnt FROM customer_images WHERE customer_id=?", (customer_id,))
         img_count = cursor.fetchone()["cnt"] if cursor else 0
 
+        # 获取画像字段
+        cursor = conn.execute("""
+            SELECT emotion_score, churn_risk, lifecycle_stage, rfm_tier, 
+                   rfm_r_days, rfm_f_count, rfm_m_amount, value_score, ai_analysis_at
+            FROM customers WHERE id=?
+        """, (customer_id,))
+        profile_row = cursor.fetchone()
+
         profile = {
             "customer_id": customer_id,
             "name": customer.get("name", ""),
@@ -573,7 +581,17 @@ async def api_customer_profile(customer_id: int):
             "first_msg_time": first_msg,
             "last_msg_time": last_msg,
             "image_count": img_count,
-            "recent_messages": recent[:5]
+            "recent_messages": recent[:5],
+            # 画像字段
+            "emotion_score": profile_row[0] if profile_row else 0,
+            "churn_risk": profile_row[1] if profile_row else 'low',
+            "lifecycle_stage": profile_row[2] if profile_row else 'new',
+            "rfm_tier": profile_row[3] if profile_row else 'D',
+            "rfm_r_days": profile_row[4] if profile_row else None,
+            "rfm_f_count": profile_row[5] if profile_row else 0,
+            "rfm_m_amount": profile_row[6] if profile_row else 0,
+            "value_score": profile_row[7] if profile_row else 0,
+            "ai_analysis_at": profile_row[8] if profile_row else None,
         }
         return profile
     finally:

@@ -257,6 +257,44 @@ def init_db():
     except:
         pass
 
+    # 兼容旧表：添加客户画像字段（如果不存在）
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN emotion_score INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN churn_risk TEXT DEFAULT 'low'")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN lifecycle_stage TEXT DEFAULT 'new'")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN rfm_tier TEXT DEFAULT 'D'")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN rfm_r_days INTEGER")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN rfm_f_count INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN rfm_m_amount REAL DEFAULT 0")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN value_score INTEGER DEFAULT 0")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE customers ADD COLUMN ai_analysis_at TEXT")
+    except:
+        pass
+
     # 图片多对多分类关联表
     conn.execute("""
         CREATE TABLE IF NOT EXISTS image_categories (
