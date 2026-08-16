@@ -91,7 +91,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 .btn-outline:hover{background:var(--bg)}
 .btn-ghost{background:transparent;border:1px solid transparent;color:var(--text);padding:4px 13px;font-size:12px;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:4px;user-select:none}
 .btn-ghost:hover{background:var(--bg)}
-.btn-ghost.active-page{background:var(--primary-bg);color:var(--primary);font-weight:500;border-color:transparent}
+.btn-ghost.active-page{background:var(--primary-bg);color:var(--primary);font-weight:500}
 .btn-sm{padding:3px 10px;font-size:11px}
 .btn-xs{padding:2px 8px;font-size:11px}
 .btn-icon{width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:transparent;border:1px solid var(--border-light);cursor:pointer;color:var(--text-secondary);padding:0;transition:all .15s;flex-shrink:0}
@@ -125,7 +125,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 .settings-header .settings-back-btn:hover{opacity:.8}
 .settings-page{display:flex;flex:1;overflow:hidden;margin:0;padding:0;width:100%}
 .settings-sidebar{width:200px;background:var(--bg-surface);border-right:1px solid var(--border-light);padding:4px 0;flex-shrink:0;overflow-y:auto}
-.settings-nav-item{padding:10px 16px;font-size:13px;cursor:pointer;color:var(--text);transition:all .1s;border-left:2px solid transparent;display:flex;align-items:center;gap:8px}
+.settings-nav-item{padding:8px 12px;font-size:13px;cursor:pointer;color:var(--text);transition:all .1s;border-left:2px solid transparent}
 .settings-nav-item:hover{background:var(--bg)}
 .settings-nav-item.active{background:var(--primary-bg);color:var(--primary);font-weight:500;border-left-color:var(--primary)}
 .settings-content{flex:1;overflow-y:auto;padding:28px 32px}
@@ -182,20 +182,16 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 
 <div class="app">
   <!-- 顶栏 -->
-  <div class="header">
-    <div style="margin-left:14px;display:flex;align-items:center;gap:12px">
-      <img src="/logo.jpeg" style="height:28px;width:auto;object-fit:contain" alt="赛乐赛">
+    <div class="header">
+      <div class="header-left" onclick="showPage('chat')" style="cursor:pointer;display:flex;align-items:center;height:32px">
+            <img src="/logo.jpeg" style="height:28px;width:auto;object-fit:contain" alt="赛乐赛">
+          </div>
+      <div class="header-right">
+              <button class="btn-icon" id="btnFollowUp" title="跟进提醒" style="position:relative"><i data-lucide="bell"></i><span id="followUpBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ff3b30;color:#fff;font-size:9px;min-width:14px;height:14px;border-radius:7px;line-height:14px;text-align:center;padding:0 3px;font-weight:700"></span></button>
+                      <button class="btn-icon" id="btnKnowledge" title="知识库"><i data-lucide="book"></i></button>
+                              <button class="btn-icon" id="btnSettings" title="设置"><i data-lucide="settings"></i></button>
+            </div>
     </div>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:4px">
-      <button class="btn btn-ghost active-page" onclick="showPage('chat')" id="navChat"><i data-lucide="message-circle" style="width:14px;height:14px;margin-right:4px"></i>聊天</button>
-      <button class="btn btn-ghost" onclick="showPage('knowledge')" id="navKnowledge"><i data-lucide="book" style="width:14px;height:14px;margin-right:4px"></i>知识库</button>
-      <button class="btn btn-ghost" onclick="showPage('imageindex')" id="navImages"><i data-lucide="image" style="width:14px;height:14px;margin-right:4px"></i>图片</button>
-      <button class="btn btn-ghost" onclick="showPage('settings')" id="navSettings"><i data-lucide="settings" style="width:14px;height:14px;margin-right:4px"></i>设置</button>
-    </div>
-    <div style="margin-left:12px;display:flex;align-items:center;gap:4px">
-      <!-- <button class="btn-icon" id="btnFollowUp" title="跟进提醒" style="position:relative"><i data-lucide="bell"></i><span id="followUpBadge" style="display:none;position:absolute;top:-2px;right:-2px;background:#ff3b30;color:#fff;font-size:9px;min-width:14px;height:14px;border-radius:7px;line-height:14px;text-align:center;padding:0 3px;font-weight:700"></span></button> -->
-    </div>
-  </div>
 
   <!-- 主体 -->
   <div class="body" id="appBody">
@@ -242,10 +238,6 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 
       <!-- 知识库页面（隐藏） -->
       <div class="hidden" id="pageKnowledge" style="flex:1;display:none;flex-direction:column;overflow:hidden;min-height:0">
-        <div style="padding:16px 20px 12px;border-bottom:1px solid var(--border-light);background:var(--bg-surface)">
-          <div style="font-size:16px;font-weight:600;margin-bottom:4px">知识库</div>
-          <div style="font-size:12px;color:var(--text-secondary)">管理文档、话术和常见问题</div>
-        </div>
               <div class="kb-toolbar">
                 <button class="btn btn-ghost btn-sm" id="kbTabDocs" onclick="switchKbTab('docs')" style="font-weight:600">📄 文档</button>
                           <button class="btn btn-ghost btn-sm" id="kbTabScripts" onclick="switchKbTab('scripts')">💡 有效话术</button>
@@ -495,18 +487,17 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 
                             <!-- 设置页面（隐藏） -->
       <div class="hidden" id="pageSettings" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0;margin:0;padding:0;width:100%">
-        <div style="padding:16px 20px 12px;border-bottom:1px solid var(--border-light);background:var(--bg-surface)">
-          <div style="font-size:16px;font-weight:600;margin-bottom:4px">设置</div>
-          <div style="font-size:12px;color:var(--text-secondary)">配置模型、提示词和个性化选项</div>
+        <div class="kb-toolbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--bg-surface);align-items:center">
+          <span style="font-size:14px;font-weight:600">⚙️ 设置</span>
         </div>
         <div style="display:flex;flex:1;overflow:hidden">
-          <div id="settingsList" style="width:220px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border-light);background:var(--bg-surface);padding:8px 0">
-            <div class="settings-nav-item" data-tab="tabSystemPrompt" onclick="switchSettingsTab('tabSystemPrompt')" style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="message-square" style="width:15px;height:15px;flex-shrink:0;color:var(--primary)"></i> 话术提示词</div>
-            <div class="settings-nav-item" data-tab="tabImageRec" onclick="switchSettingsTab('tabImageRec')" style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="eye" style="width:15px;height:15px;flex-shrink:0;color:var(--primary)"></i> 图片识别</div>
-            <div class="settings-nav-item" data-tab="tabImageRecIndex" onclick="switchSettingsTab('tabImageRecIndex')" style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="tag" style="width:15px;height:15px;flex-shrink:0;color:var(--primary)"></i> 索引识别</div>
-            <div class="settings-nav-item" data-tab="tabModelConfig" onclick="switchSettingsTab('tabModelConfig');setTimeout(loadModelConfigTab,0)" style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="sliders" style="width:15px;height:15px;flex-shrink:0;color:var(--primary)"></i> 模型</div>
-            <div class="settings-nav-item" data-tab="tabTags" onclick="switchSettingsTab('tabTags');setTimeout(loadTags,0)" style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="tags" style="width:15px;height:15px;flex-shrink:0;color:var(--primary)"></i> 标签</div>
-            <div class="settings-nav-item" data-tab="tabBannedWords" onclick="switchSettingsTab('tabBannedWords');loadSettings()" style="padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="ban" style="width:15px;height:15px;flex-shrink:0;color:var(--primary)"></i> 违禁词</div>
+          <div id="settingsList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0">
+            <div class="settings-nav-item" data-tab="tabSystemPrompt" onclick="switchSettingsTab('tabSystemPrompt')" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="message-square" style="width:16px;height:16px;flex-shrink:0"></i> 话术提示词</div>
+            <div class="settings-nav-item" data-tab="tabImageRec" onclick="switchSettingsTab('tabImageRec')" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="eye" style="width:16px;height:16px;flex-shrink:0"></i> 图片识别</div>
+            <div class="settings-nav-item" data-tab="tabImageRecIndex" onclick="switchSettingsTab('tabImageRecIndex')" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="tag" style="width:16px;height:16px;flex-shrink:0"></i> 索引识别</div>
+            <div class="settings-nav-item" data-tab="tabModelConfig" onclick="switchSettingsTab('tabModelConfig');setTimeout(loadModelConfigTab,0)" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="sliders" style="width:16px;height:16px;flex-shrink:0"></i> 模型</div>
+            <div class="settings-nav-item" data-tab="tabTags" onclick="switchSettingsTab('tabTags');setTimeout(loadTags,0)" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="tags" style="width:16px;height:16px;flex-shrink:0"></i> 标签</div>
+            <div class="settings-nav-item" data-tab="tabBannedWords" onclick="switchSettingsTab('tabBannedWords');loadSettings()" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="ban" style="width:16px;height:16px;flex-shrink:0"></i> 违禁词</div>
             <div class="settings-nav-item" data-tab="tabPersonalize" onclick="switchSettingsTab('tabPersonalize');loadPersonalize()" style="padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;border-bottom:1px solid var(--border-light)"><i data-lucide="palette" style="width:16px;height:16px;flex-shrink:0"></i> 个性化</div>
           </div>
           <div id="settingsDetail" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;border-left:1px solid var(--border);background:var(--bg-surface)">
@@ -954,9 +945,9 @@ function showPage(page) {
   ii.classList.toggle('hidden', page !== 'imageindex');
   
   // 按钮高亮
-  document.querySelectorAll('.header [id^="nav"]').forEach(b=>b.classList.remove('active-page'));
-  const navBtn = document.getElementById('nav'+page.charAt(0).toUpperCase()+page.slice(1));
-  if (navBtn) navBtn.classList.add('active-page');
+  document.querySelectorAll('.header-right .btn-icon').forEach(b=>b.classList.remove('active'));
+  if (page === 'knowledge') document.getElementById('btnKnowledge').classList.add('active');
+  if (page === 'settings') document.getElementById('btnSettings').classList.add('active');
 }
 
 // ===== 客户列表（三大类折叠） =====
@@ -1019,7 +1010,12 @@ function toggleCategory(catId) {
   }
 }
 function renderCustomerItem(c) {
-  var badgeHtml = '';
+  const silentDays = _followUpData.silent[c.id];
+  let badgeHtml = '';
+  if (silentDays) {
+    const color = silentDays > 7 ? '#e53935' : '#f57c00';
+    badgeHtml = '<span style="margin-left:6px;font-size:10px;font-weight:700;color:' + color + '">' + silentDays + '天</span>';
+  }
   var purchaseHtml = '';
     if (c.purchase_history) {
       try {
@@ -1069,6 +1065,7 @@ function renderCustomerList() {
         <span class="arrow" id="catArrow_${catId}">▶</span>
         <span class="cat-label">${icon} ${g.label}</span>
         <span class="cat-count">${g.count}</span>
+        ${_followUpData.groupCounts[catId] ? '<span class="followup-count" style="margin-left:4px;font-size:10px;background:#f44336;color:#fff;padding:1px 5px;border-radius:8px;font-weight:700">' + _followUpData.groupCounts[catId] + '待跟进</span>' : ''}
       </div>
       <div class="category-body" id="catBody_${catId}">
         ${isEmpty ? '<div style="padding:10px 22px;font-size:12px;color:var(--text-secondary)">暂无客户</div>' :
@@ -3559,21 +3556,17 @@ document.getElementById('customerSearch').addEventListener('input', function() {
 });
 
 // ===== 顶部按钮 =====
-document.getElementById('navKnowledge').addEventListener('click', function() {
+document.getElementById('btnKnowledge').addEventListener('click', function() {
+  if (this.classList.contains('active')) { showPage('chat'); return; }
   showPage('knowledge');
   loadKnowledge();
 });
-document.getElementById('navSettings').addEventListener('click', function() {
+document.getElementById('btnSettings').addEventListener('click', function() {
+  if (this.classList.contains('active')) { showPage('chat'); return; }
   showPage('settings');
   loadPrompt();
   loadSettings();
   loadTags();
-});
-document.getElementById('navImages').addEventListener('click', function() {
-  showPage('imageindex');
-});
-document.getElementById('navChat').addEventListener('click', function() {
-  showPage('chat');
 });
 document.getElementById('chatContainer').addEventListener('click', () => { showPage('chat'); });
 
