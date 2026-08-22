@@ -1340,11 +1340,45 @@ async function removeImagePreview(previewId, imgId) {
   } catch(e) { showToast('删除失败'); }
 }
 
+// ===== 消息合并函数 =====
+function mergeConsecutiveMessages(msgs) {
+  if (!msgs || msgs.length === 0) return [];
+  
+  const merged = [];
+  let current = { ...msgs[0] };
+  
+  for (let i = 1; i < msgs.length; i++) {
+    const msg = msgs[i];
+    
+    // 如果角色相同，合并内容
+    if (msg.role === current.role) {
+      // 追加内容
+      if (current._parts) {
+        current._parts.push(msg.content);
+      } else {
+        current.content = (current.content || '') + '\n\n' + msg.content;
+        current._parts = [current.content];
+      }
+      // 更新时间戳为最新
+      current.timestamp = msg.timestamp;
+    } else {
+      // 角色不同，保存当前消息，开始新的
+      merged.push(current);
+      current = { ...msg };
+    }
+  }
+  
+  // 添加最后一条
+  merged.push(current);
+  
+  return merged;
+}
+
 // ===== 消息 =====
 async function loadMessages(customerId) {
   try {
     const r = await api('GET', `/api/customers/${customerId}/messages`);
-    messages = (r.messages || []).map(m => {
+    let rawMessages = (r.messages || []).map(m => {
       // 后端加载时，AI消息解析为代码块格式
       if (m.role === 'assistant' && m.content) {
         if (m.content.includes('---')) {
@@ -1363,6 +1397,10 @@ async function loadMessages(customerId) {
       }
       return m;
     });
+    
+    // 合并连续同角色消息为一条
+    messages = mergeConsecutiveMessages(rawMessages);
+    
     renderMessages();
     // 重新处理待生成的图片标记
     setTimeout(function() {

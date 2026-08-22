@@ -534,9 +534,9 @@ def delete_customer(customer_id):
 
 def get_messages(customer_id, session_id=None):
     """获取客户的所有消息"""
-    # 尝试从 customers.db 读取（旧版）
-    conn = get_db()
+    # 优先从 messages.db 读取（新版，包含完整的user+assistant对话）
     try:
+        conn = get_messages_db()
         if session_id:
             cursor = conn.execute(
                 "SELECT * FROM messages WHERE customer_id=? AND session_id=? ORDER BY timestamp ASC",
@@ -558,9 +558,9 @@ def get_messages(customer_id, session_id=None):
         if 'conn' in locals():
             conn.close()
     
-    # 如果 customers.db 没有，尝试 messages.db（新版）
+    # 如果 messages.db 没有，尝试从 customers.db 读取（旧版，可能缺少assistant消息）
     try:
-        conn = get_messages_db()
+        conn = get_db()
         if session_id:
             cursor = conn.execute(
                 "SELECT * FROM messages WHERE customer_id=? AND session_id=? ORDER BY timestamp ASC",
