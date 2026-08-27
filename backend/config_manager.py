@@ -252,33 +252,41 @@ def get_embedding_config():
     """获取Embedding模型配置（优先从 models.list 读取）"""
     config = load_config()
     models = config.get("models", {})
-    emb_id = models.get("embedding_default_id", "")
     model_list = models.get("list", {})
     
-    if emb_id and emb_id in model_list:
-            m = model_list[emb_id]
-            base_url = m.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings")
-            api_mode = m.get("api_mode", "openai")
-            # OpenAI 模式自动补 /embeddings
-            if api_mode == "openai" and not base_url.rstrip("/").endswith("/embeddings"):
-                base_url = base_url.rstrip("/") + "/embeddings"
-            return {
-                "model": m.get("model", "text-embedding-v2"),
-                "base_url": base_url,
-                "dim": m.get("dim") or config.get("embedding", {}).get("dim", 1536),
-                "api_key": m.get("api_key", ""),
-                "api_mode": m.get("api_mode", "openai")
-    }
+    # 先查找embedding类型的模型
+    emb_model = None
+    for model_id, model_config in model_list.items():
+        if "embedding" in model_config.get("categories", []):
+            emb_model = model_config
+            break
+    
+    if emb_model:
+        base_url = emb_model.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings")
+        api_mode = emb_model.get("api_mode", "openai")
+        # OpenAI 模式自动补 /embeddings
+        if api_mode == "openai" and not base_url.rstrip("/").endswith("/embeddings"):
+            base_url = base_url.rstrip("/") + "/embeddings"
+        return {
+            "model": emb_model.get("model", "text-embedding-v2"),
+            "base_url": base_url,
+            "dim": emb_model.get("dim") or config.get("embedding", {}).get("dim", 1536),
+            "api_key": emb_model.get("api_key", ""),
+            "api_mode": api_mode,
+            "dimension": emb_model.get("dimension", emb_model.get("dim", 1024))
+        }
     
     # Fallback to old embedding section
     emb = config.get("embedding", DEFAULT_CONFIG.get("embedding", {}))
-    api_key = config.get("embedding_api_key", "") or config.get("llm", {}).get("api_key", "")
+    # 优先使用embedding部分的api_key，其次使用embedding_api_key，最后使用llm的api_key
+    api_key = emb.get("api_key", "") or config.get("embedding_api_key", "") or config.get("llm", {}).get("api_key", "")
     return {
         "model": emb.get("model", "text-embedding-v2"),
         "base_url": emb.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"),
-        "dim": emb.get("dim", 1536),
+        "dim": emb.get("dim", emb.get("dimension", 1024)),
         "api_key": api_key,
-        "api_mode": emb.get("api_mode", "openai")
+        "api_mode": emb.get("api_mode", "openai"),
+        "dimension": emb.get("dimension", emb.get("dim", 1024))
     }
 
 

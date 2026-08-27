@@ -172,9 +172,9 @@ def _get_embedding(text: str) -> Optional[List[float]]:
         return None
 
     try:
-        # 截断到 2000 字符确保安全
-        if len(text) > 2000:
-            text = text[:2000]
+        # 截断到 1000 字符（百度千帆限制）
+        if len(text) > 1000:
+            text = text[:1000]
 
         # 根据 api_mode 选择请求格式
         if _embedding_api_mode == "dashscope_multimodal":
@@ -189,7 +189,7 @@ def _get_embedding(text: str) -> Optional[List[float]]:
                 "input": {"texts": [text]}
             }).encode("utf-8")
         else:  # openai (默认)
-            data = json.dumps({"input": text, "model": _embedding_model}).encode("utf-8")
+            data = json.dumps({"input": [text], "model": _embedding_model}).encode("utf-8")
 
         req = urllib.request.Request(
             _embedding_url, data=data,

@@ -248,6 +248,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
         </div>
               <div class="kb-toolbar">
                 <button class="btn btn-ghost btn-sm" id="kbTabDocs" onclick="switchKbTab('docs')" style="font-weight:600">📄 文档</button>
+                          <button class="btn btn-ghost btn-sm" id="kbTabImages" onclick="switchKbTab('images')">🖼️ 图片</button>
                           <button class="btn btn-ghost btn-sm" id="kbTabScripts" onclick="switchKbTab('scripts')">💡 有效话术</button>
                           <button class="btn btn-ghost btn-sm" id="kbTabFaq" onclick="switchKbTab('faq')">❓ 常见问题</button>
                           <button class="btn btn-ghost btn-sm" id="kbTabStats" onclick="switchKbTab('stats')">📊 统计</button>
@@ -261,6 +262,20 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
               <div id="kbDocsView" style="display:flex;flex:1;overflow:hidden">
                 <div id="kbList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div>
                 <div id="kbDetail" style="flex:1;overflow-y:auto;padding:20px 24px"><div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个文档查看详情</div></div>
+              </div>
+              <!-- 图片标签 -->
+              <div id="kbImagesView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+                <div style="display:flex;gap:8px;padding:8px 12px;align-items:center;border-bottom:1px solid var(--border)">
+                  <input type="text" id="kbImageSearch" placeholder="搜索图片..." style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:6px;background:var(--input-bg);color:var(--text);font-size:13px;outline:none" onkeypress="if(event.key==='Enter')searchKnowledgeImages()">
+                  <button class="btn btn-outline btn-sm" onclick="searchKnowledgeImages()">🔍 搜索</button>
+                  <span id="kbImageCount" style="font-size:12px;color:var(--text-secondary);margin-left:auto"></span>
+                </div>
+                <div id="kbImageList" style="flex:1;overflow-y:auto;padding:16px">
+                  <div style="text-align:center;color:var(--text-secondary);padding:40px 20px;font-size:14px">
+                    上传图片到知识库后，这里会显示文档中的图片<br>
+                    <small>支持 .docx, .pptx 格式</small>
+                  </div>
+                </div>
               </div>
               <!-- 有效话术标签 -->
               <div id="kbScriptsView" style="display:none;flex:1;overflow:hidden;flex-direction:column">
@@ -2681,16 +2696,18 @@ let _currentScriptTab = 'docs';
 function switchKbTab(tab) {
   _currentScriptTab = tab;
   document.getElementById('kbDocsView').style.display = tab === 'docs' ? 'flex' : 'none';
+    document.getElementById('kbImagesView').style.display = tab === 'images' ? 'flex' : 'none';
     document.getElementById('kbScriptsView').style.display = tab === 'scripts' ? 'flex' : 'none';
     document.getElementById('kbFaqView').style.display = tab === 'faq' ? 'flex' : 'none';
     document.getElementById('kbStatsView').style.display = tab === 'stats' ? 'flex' : 'none';
   document.getElementById('kbUploadBtn').style.display = tab === 'docs' ? 'inline-flex' : 'none';
   document.getElementById('kbReindexBtn').style.display = tab === 'docs' ? 'inline-flex' : 'none';
-  document.querySelectorAll('#kbTabDocs, #kbTabScripts, #kbTabFaq, #kbTabStats').forEach(function(el) { el.style.fontWeight = 'normal'; });
+  document.querySelectorAll('#kbTabDocs, #kbTabImages, #kbTabScripts, #kbTabFaq, #kbTabStats').forEach(function(el) { el.style.fontWeight = 'normal'; });
     document.getElementById('kbTab' + tab.charAt(0).toUpperCase() + tab.slice(1)).style.fontWeight = '600';
     if (tab === 'scripts') loadEffectiveScripts();
     if (tab === 'faq') loadFaqs();
     if (tab === 'stats') loadScriptStats();
+    if (tab === 'images') loadKnowledgeImages();
 }
 
 async function loadEffectiveScripts() {
@@ -2928,6 +2945,78 @@ async function loadKnowledge() {
     else if (docs.length > 0) viewKnowledgeDoc(docs[0].id);
   } catch(e) { showToast('加载知识库失败'); }
 }
+
+
+// ===== 知识文档图片 =====
+
+async function loadKnowledgeImages() {
+  const container = document.getElementById('kbImageList');
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">加载中...</div>';
+  
+  try {
+    const resp = await fetch('/api/knowledge/images/stats');
+    const data = await resp.json();
+    
+    if (data.status === 'ok') {
+      document.getElementById('kbImageCount').textContent = `共 ${data.stats.total_images || 0} 张图片`;
+      
+      if (data.stats.total_images > 0) {
+        container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">使用搜索功能查找图片</div>';
+      } else {
+        container.innerHTML = '<div style="text-align:center;padding:40px 20px;font-size:14px;color:var(--text-secondary)">暂无知识文档图片<br><small>上传 .docx 或 .pptx 文件到知识库</small></div>';
+      }
+    }
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">加载失败: ${e.message}</div>`;
+  }
+}
+
+
+async function searchKnowledgeImages() {
+  const query = document.getElementById('kbImageSearch').value.trim();
+  const container = document.getElementById('kbImageList');
+  
+  if (!query) {
+    loadKnowledgeImages();
+    return;
+  }
+  
+  container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-secondary)">搜索中...</div>';
+  
+  try {
+    const resp = await fetch(`/api/knowledge/images/search?q=${encodeURIComponent(query)}&limit=20`);
+    const data = await resp.json();
+    
+    if (data.status === 'ok') {
+      document.getElementById('kbImageCount').textContent = `找到 ${data.count} 张图片`;
+      
+      if (data.images && data.images.length > 0) {
+        // 网格布局显示图片
+        container.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">';
+        
+        for (const img of data.images) {
+          const imgSrc = `/api/knowledge/images/${img.id}/file`;
+          container.innerHTML += `
+            <div style="background:var(--bg-surface);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
+              <img src="${imgSrc}" alt="${img.filename}" style="width:100%;height:150px;object-fit:cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>🖼️</text></svg>'">
+              <div style="padding:10px">
+                <div style="font-size:12px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${img.filename}</div>
+                <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;max-height:40px;overflow:hidden">${img.description?.substring(0, 80) || '暂无描述'}</div>
+              </div>
+            </div>
+          `;
+        }
+        
+        container.innerHTML += '</div>';
+      } else {
+        container.innerHTML = '<div style="text-align:center;padding:40px 20px;font-size:14px;color:var(--text-secondary)">未找到相关图片</div>';
+      }
+    }
+  } catch (e) {
+    container.innerHTML = `<div style="text-align:center;padding:20px;color:var(--danger)">搜索失败: ${e.message}</div>`;
+  }
+}
+
 
 async function viewKnowledgeDoc(docId) {
   _selectedDocId = docId;

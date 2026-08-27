@@ -80,12 +80,18 @@ def get_vectors_db():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # 加载 sqlite-vec 扩展
+    try:
+        import sqlite_vec
+        sqlite_vec.load(conn)
+    except Exception:
+        pass
     # 初始化向量表
     try:
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_vectors USING vec0(
                 id TEXT PRIMARY KEY,
-                vector FLOAT[1536]
+                vector FLOAT[_embedding_dim]
             )
         """)
     except Exception:
@@ -100,12 +106,18 @@ def get_image_vec_db():
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA synchronous=NORMAL")
+    # 加载 sqlite-vec 扩展
+    try:
+        import sqlite_vec
+        sqlite_vec.load(conn)
+    except Exception:
+        pass
     # 初始化图片向量表
     try:
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS image_vectors USING vec0(
                 image_id INTEGER PRIMARY KEY,
-                vector FLOAT[1536]
+                vector FLOAT[_embedding_dim]
             )
         """)
     except Exception:
@@ -1293,7 +1305,11 @@ def _find_image_vec_dll() -> str:
         candidates.append(os.path.join(os.path.dirname(sys.executable), '_internal', 'sqlite_vec', 'vec0.dll'))
     try:
         import sqlite_vec
-        candidates.append(os.path.join(os.path.dirname(sqlite_vec.__file__), 'vec0.dll'))
+        # 尝试多个可能的路径
+        pkg_dir = os.path.dirname(sqlite_vec.__file__)
+        candidates.append(os.path.join(pkg_dir, 'vec0.dll'))
+        # 如果sqlite_vec包在hermes目录下，也搜索一下
+        candidates.append(os.path.join(os.path.dirname(pkg_dir), 'vec0.dll'))
     except Exception:
         pass
     for c in candidates:
@@ -1307,24 +1323,29 @@ def _get_image_embedding(text: str) -> tuple:
     try:
         import urllib.request
         import urllib.error
-        from config_manager import load_config
-        config = load_config()
-        api_key = config.get("embedding_api_key", "")
+        import ssl  # ← 添加这行
+        from config_manager import get_embedding_config
+        # 优先使用新的配置函数
+        embedding_config = get_embedding_config()
+        api_key = embedding_config.get("api_key", "")
         if not api_key:
-            api_key = config.get("llm", {}).get("api_key", "")
+            from config_manager import load_config
+            config = load_config()
+            api_key = config.get("embedding_api_key", "")
+            if not api_key:
+                api_key = config.get("llm", {}).get("api_key", "")
         if not api_key:
             return None, "未配置 API Key"
 
-        text = text.strip()[:2000]
+        text = text.strip()[:1000]
         if not text:
             return None, "描述为空"
 
         # 从配置读取 embedding 模型和 URL
-        embedding_config = _get_image_embedding_config()
         model_name = embedding_config.get("model", "text-embedding-v3")
         api_url = embedding_config.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings")
         api_mode = embedding_config.get("api_mode", "openai")
-        dim = embedding_config.get("dim", 1024)
+        dim = embedding_config.get("dim", embedding_config.get("dimension", 1024))
 
         # OpenAI 模式自动补 /embeddings
         if api_mode == "openai" and not api_url.rstrip("/").endswith("/embeddings"):
@@ -1332,25 +1353,32 @@ def _get_image_embedding(text: str) -> tuple:
 
         # 根据 api_mode 选择请求格式
         if api_mode == "dashscope_multimodal":
-            data = json.dumps({
+            payload = {
                 "model": model_name,
                 "input": {"contents": [{"text": text}]},
                 "parameters": {"dimension": dim}
-            }).encode("utf-8")
+            }
         elif api_mode == "dashscope_text":
-            data = json.dumps({
+            payload = {
                 "model": model_name,
                 "input": {"texts": [text]}
-            }).encode("utf-8")
+            }
         else:  # openai (默认)
-            data = json.dumps({"input": text, "model": model_name}).encode("utf-8")
+            payload = {
+                "model": model_name,
+                "input": [text] if isinstance(text, str) else text
+            }
 
         req = urllib.request.Request(
-            api_url, data=data,
+            api_url, data=json.dumps(payload).encode("utf-8"),
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             method="POST"
         )
-        resp = urllib.request.urlopen(req, timeout=30)
+        # 使用SSL上下文解决证书问题
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        resp = urllib.request.urlopen(req, timeout=30, context=context)
         result = json.loads(resp.read().decode("utf-8"))
 
         # 根据 api_mode 从响应中提取向量

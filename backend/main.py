@@ -941,26 +941,62 @@ async def api_generate_script(request: Request):
     def _parse_recent_messages(text: str):
         """从输入文本中分离聊天记录和销售顾问分析指令"""
         import re
-        # 按空行分割成块，用 chr(10) 避免字符串跨行问题
-        blocks = re.split(chr(10) + chr(10), text)
-        chat_blocks = []
-        instruction_blocks = []
-        found_chat = False
+        # 按行分割，识别每一行的类型
+        lines = text.split('\n')
+        chat_lines = []
+        instruction_lines = []
+        
         # 时间戳匹配：任意文本 + 数字/数字 + 数字:数字:数字
         ts_pat = re.compile(r'^.+?\s+\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2}(:\d{2})?\s*$')
-        for block in blocks:
-            block = block.strip()
-            if not block:
+        # 【】系统指令匹配
+        bracket_pat = re.compile(r'^【.*】$')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            if not line:
+                i += 1
                 continue
-            first_line = block.split(chr(10))[0].strip()
-            if ts_pat.match(first_line):
-                found_chat = True
-                chat_blocks.append(block)
-            elif found_chat:
-                instruction_blocks.append(block)
+            
+            # 检查是否是时间戳行
+            if ts_pat.match(line):
+                # 时间戳行属于聊天记录
+                chat_lines.append(line)
+                i += 1
+                # 继续收集后续行，直到遇到空行或新的时间戳或【】
+                while i < len(lines):
+                    next_line = lines[i].strip()
+                    if not next_line:
+                        i += 1
+                        break
+                    elif ts_pat.match(next_line) or bracket_pat.match(next_line):
+                        break  # 遇到新的时间戳或【】，停止
+                    else:
+                        chat_lines.append(next_line)
+                        i += 1
+            # 检查是否是【】系统指令
+            elif bracket_pat.match(line):
+                instruction_lines.append(line)
+                i += 1
+                # 继续收集后续行，直到遇到空行
+                while i < len(lines):
+                    next_line = lines[i].strip()
+                    if not next_line:
+                        i += 1
+                        break
+                    instruction_lines.append(next_line)
+                    i += 1
+            # 其他行
             else:
-                chat_blocks.append(block)
-        return chr(10).join(chat_blocks), chr(10).join(instruction_blocks)
+                # 如果前面已有系统指令，这些行也属于指令
+                if instruction_lines and not chat_lines:
+                    instruction_lines.append(line)
+                else:
+                    chat_lines.append(line)
+                i += 1
+        
+        return '\n'.join(chat_lines), '\n'.join(instruction_lines)
 
     # 调用 LLM 生成话术
     parsed_recent, parsed_instruction = _parse_recent_messages(enriched_recent)
@@ -1127,25 +1163,62 @@ async def api_generate_script_stream(request: Request, data: dict = Body(...)):
                          for img in customer_images[:5]]
 
     def _parse_recent_messages(text: str):
+        """从输入文本中分离聊天记录和销售顾问分析指令"""
         import re
-        blocks = re.split(chr(10) + chr(10), text)
-        chat_blocks = []
-        instruction_blocks = []
-        found_chat = False
+        # 按行分割，识别每一行的类型
+        lines = text.split('\n')
+        chat_lines = []
+        instruction_lines = []
+        
+        # 时间戳匹配
         ts_pat = re.compile(r'^.+?\s+\d{1,2}[/-]\d{1,2}\s+\d{1,2}:\d{2}(:\d{2})?\s*$')
-        for block in blocks:
-            block = block.strip()
-            if not block:
+        # 【】系统指令匹配
+        bracket_pat = re.compile(r'^【.*】$')
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            
+            if not line:
+                i += 1
                 continue
-            first_line = block.split(chr(10))[0].strip()
-            if ts_pat.match(first_line):
-                found_chat = True
-                chat_blocks.append(block)
-            elif found_chat:
-                instruction_blocks.append(block)
+            
+            # 检查是否是时间戳行
+            if ts_pat.match(line):
+                chat_lines.append(line)
+                i += 1
+                # 继续收集后续行，直到遇到空行或新的时间戳或【】
+                while i < len(lines):
+                    next_line = lines[i].strip()
+                    if not next_line:
+                        i += 1
+                        break
+                    elif ts_pat.match(next_line) or bracket_pat.match(next_line):
+                        break
+                    else:
+                        chat_lines.append(next_line)
+                        i += 1
+            # 检查是否是【】系统指令
+            elif bracket_pat.match(line):
+                instruction_lines.append(line)
+                i += 1
+                # 继续收集后续行，直到遇到空行
+                while i < len(lines):
+                    next_line = lines[i].strip()
+                    if not next_line:
+                        i += 1
+                        break
+                    instruction_lines.append(next_line)
+                    i += 1
+            # 其他行
             else:
-                chat_blocks.append(block)
-        return chr(10).join(chat_blocks), chr(10).join(instruction_blocks)
+                if instruction_lines and not chat_lines:
+                    instruction_lines.append(line)
+                else:
+                    chat_lines.append(line)
+                i += 1
+        
+        return '\n'.join(chat_lines), '\n'.join(instruction_lines)
 
     parsed_recent, parsed_instruction = _parse_recent_messages(enriched_recent)
     if analysis_tags:
@@ -1486,19 +1559,38 @@ async def api_list_documents():
 
 @app.post("/api/knowledge/upload")
 async def api_upload_document(file: UploadFile = File(...)):
-    """上传知识库文件"""
+    """上传知识库文件（支持docx/pptx/pdf/txt）"""
     import tempfile
+    import shutil
+    from knowledge_image_processor import process_document_images
+    
     content_bytes = await file.read()
-    suffix = Path(file.filename).suffix if file.filename else ".txt"
+    suffix = Path(file.filename).suffix.lower() if file.filename else ".txt"
+    
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content_bytes)
         tmp_path = tmp.name
+    
     try:
-        text = extract_text_from_file(tmp_path)
-        if not text.strip():
-            raise HTTPException(status_code=400, detail="无法提取文件内容")
-        doc = add_document(file.filename, text)
-        return {"status": "ok", "document": doc}
+        # 如果是文档格式，提取图片
+        if suffix in ['.docx', '.pptx']:
+            # 处理文档，提取图片
+            result = process_document_images(tmp_path)
+            
+            # 同时提取文本内容（原有逻辑）
+            text = extract_text_from_file(tmp_path)
+            if text.strip():
+                doc = add_document(file.filename, text)
+                result['document'] = doc
+            
+            return {"status": "ok", "result": result}
+        else:
+            # 原有逻辑：处理文本文件
+            text = extract_text_from_file(tmp_path)
+            if not text.strip():
+                raise HTTPException(status_code=400, detail="无法提取文件内容")
+            doc = add_document(file.filename, text)
+            return {"status": "ok", "document": doc}
     finally:
         try:
             os.unlink(tmp_path)
@@ -1592,6 +1684,56 @@ async def api_get_document_file(doc_id: str):
 async def api_search_knowledge(q: str = Query(..., min_length=1)):
     """搜索知识库"""
     return search_knowledge(q, top_k=20)
+
+
+@app.get("/api/knowledge/documents/{doc_id}/images")
+async def api_get_knowledge_doc_images(doc_id: str):
+    """获取知识文档的图片"""
+    from knowledge_image_processor import get_images_by_doc
+    images = get_images_by_doc(doc_id)
+    return {"status": "ok", "images": images, "count": len(images)}
+
+
+@app.get("/api/knowledge/images/search")
+async def api_search_knowledge_images(q: str = Query(...), limit: int = 10):
+    """搜索知识文档图片"""
+    from knowledge_image_processor import search_images
+    images = search_images(q, limit)
+    return {"status": "ok", "images": images, "count": len(images)}
+
+
+@app.get("/api/knowledge/images/stats")
+async def api_get_knowledge_image_stats():
+    """获取知识文档图片统计"""
+    from knowledge_image_processor import get_stats
+    stats = get_stats()
+    return {"status": "ok", "stats": stats}
+
+
+@app.get("/api/knowledge/images/{image_id}/file")
+async def api_get_knowledge_image_file(image_id: int):
+    """获取知识文档图片文件"""
+    import sqlite3
+    import os
+    from pathlib import Path
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+    
+    db_path = Path(r'D:\小赛助手\data\image_vectors.db')
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
+    cursor.execute("SELECT file_path FROM doc_images WHERE id = ?", (image_id,))
+    row = cursor.fetchone()
+    conn.close()
+    
+    if not row:
+        raise HTTPException(status_code=404, detail="图片不存在")
+    
+    file_path = row[0]
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    else:
+        raise HTTPException(status_code=404, detail="图片文件不存在")
 
 
 # ===== 客户图片上传 =====
