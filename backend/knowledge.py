@@ -26,27 +26,49 @@ VEC_DB_PATH = DATA_DIR / "vectors.db"  # 向量库（独立文件）
 # 全局标记：embedding API 是否可用
 _embedding_available = True
 
-# 从配置读取 embedding 模型参数
+# 重排序模型配置
+_reranker_model = "bce-reranker-base"  # 默认使用基础版
+_reranker_available = False  # 待初始化时检测
+
+# 从配置读取 embedding 和 reranker 模型参数
 def _init_embedding_config():
     """从 config.json 加载 embedding 配置"""
     global _embedding_model, _embedding_dim, _embedding_url, _embedding_api_mode
+    global _reranker_model, _reranker_available
     try:
         import config_manager as cfg
         emb = cfg.get_embedding_config()
-        _embedding_model = emb.get("model", "text-embedding-v2")
-        _embedding_dim = emb.get("dim", 1536)
-        _embedding_url = emb.get("base_url", "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings")
+        _embedding_model = emb.get("model", "embedding-v1")
+        _embedding_dim = emb.get("dim", 384)
+        _embedding_url = emb.get("base_url", "https://qianfan.baidubce.com/v2/embeddings")
         _embedding_api_mode = emb.get("api_mode", "openai")
-    except Exception:
-        _embedding_model = "text-embedding-v2"
-        _embedding_dim = 1536
-        _embedding_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
-        _embedding_api_mode = "openai"
 
-_embedding_model = "text-embedding-v2"
-_embedding_dim = 1536
-_embedding_url = "https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings"
-_embedding_api_mode = "openai"
+        # 尝试加载 reranker 配置
+        reranker_cfg = emb.get("reranker", {})
+        api_key = emb.get("api_key", "")
+
+        # 调试输出
+        print(f"[Knowledge] Reranker config: {reranker_cfg}")
+        print(f"[Knowledge] API key from emb: {bool(api_key)}")
+
+        if isinstance(reranker_cfg, dict) and reranker_cfg.get("enabled", False):
+            _reranker_model = reranker_cfg.get("model", "bce-reranker-base")
+            _reranker_available = True
+            print(f"[Knowledge] Reranker enabled from config")
+        else:
+            # 默认使用基础版 reranker（如果 API key 存在）
+            if not api_key:
+                config = cfg.load_config()
+                api_key = config.get("embedding_api_key", "") or config.get("llm", {}).get("api_key", "")
+            _reranker_model = "bce-reranker-base"
+            _reranker_available = bool(api_key)
+            print(f"[Knowledge] Reranker auto-enabled: {_reranker_available}")
+
+    except Exception as e:
+        print(f"[Knowledge] Failed to init embedding config: {e}")
+        import traceback
+        traceback.print_exc()
+
 _init_embedding_config()
 
 # 错误重试机制：瞬态错误 5 分钟后自动复位重试
@@ -71,6 +93,68 @@ def _get_api_key() -> str:
         return config.get("llm", {}).get("api_key", "")
     except Exception:
         return ""
+
+
+# ===== 重排序 API =====
+
+def rerank_documents(query: str, documents: list, top_n: int = 5) -> list:
+    """使用百度千帆 Reranker 对候选文档重新排序"""
+    if not _reranker_available or not documents:
+        return []
+
+    api_key = _get_api_key()
+    if not api_key:
+        return []
+
+    try:
+        # 截断 query
+        if len(query) > 1600:
+            query = query[:1600]
+
+        # 截断每个 document
+        truncated_docs = []
+        for doc in documents:
+            if len(doc) > 4096:
+                doc = doc[:4096]
+            truncated_docs.append(doc)
+
+        data = json.dumps({
+            "model": _reranker_model,
+            "query": query,
+            "documents": truncated_docs,
+            "top_n": min(top_n, len(truncated_docs))
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            "https://qianfan.baidubce.com/v2/rerank",
+            data=data,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            },
+            method="POST"
+        )
+
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+
+        # 解析结果
+        results = result.get("results", [])
+        reranked = []
+        for r in results:
+            idx = r.get("index", 0)
+            if idx < len(documents):
+                reranked.append({
+                    **r,
+                    "document": truncated_docs[idx],
+                    "original_index": idx
+                })
+
+        return reranked
+
+    except Exception as e:
+        print(f"[Rerank 失败]: {e}")
+        return []
 
 
 # ===== sqlite-vec 初始化 =====
@@ -470,38 +554,92 @@ def add_document(filename: str, content: str) -> dict:
     return doc_info
 
 
-# ===== 文本分块 =====
+# ===== 文本分块（增强版） =====
 
-def _chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list:
-    """将长文本切分成块，带重叠"""
+# 预定义的文档类型关键词
+_TYPE_KEYWORDS = {
+    "price": ["价格", "费用", "多少钱", "套餐", "价位", "定价", "购买", "收费"],
+    "faq": ["问", "怎么", "如何", "是否", "可以", "能不能", "可以吗"],
+    "case": ["客户", "案例", "使用", "效果", "反馈", "体验", "亲测"],
+    "instruction": ["用法", "服用", "每天", "一次", "剂量", "用量"],
+    "warning": ["禁忌", "注意", "不能", "禁止", "副作用", "禁忌症"],
+    "intro": ["介绍", "成分", "功效", "作用", "原理", "机制"]
+}
+
+
+def _classify_chunk(text: str) -> str:
+    """根据内容自动分类 chunk 类型"""
+    text_lower = text.lower()
+    for chunk_type, keywords in _TYPE_KEYWORDS.items():
+        if any(kw in text_lower for kw in keywords):
+            return chunk_type
+    return "general"
+
+
+def _chunk_text_improved(text: str, chunk_size: int = 300, overlap: int = 50) -> list:
+    """改进版文本分块：添加元数据（标题、来源、类型标签）"""
     text = text.strip()
     if not text:
         return []
+
     chunks = []
     paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
     current_chunk = ""
+    current_title = ""
+    current_type = "general"
+
     for para in paragraphs:
+        # 检测是否是标题行（短行且包含关键词）
+        if len(para) < 50 and any(kw in para for kw in ["价格", "套餐", "FAQ", "案例", "用法"]):
+            current_title = para
+            current_type = _classify_chunk(para)
+            continue
+
+        # 按段落累加
+        if len(current_chunk) + len(para) > chunk_size:
+            if current_chunk:
+                chunks.append({
+                    "content": current_chunk.strip(),
+                    "title": current_title,
+                    "type": current_type,
+                    "size": len(current_chunk)
+                })
+            # 重叠部分
+            overlap_text = current_chunk[-overlap:] if len(current_chunk) > overlap else ""
+            current_chunk = overlap_text + para
+        else:
+            current_chunk += para + "\n"
+
+        # 如果当前段落很长，按句子切分
         if len(para) > chunk_size:
             sentences = [s.strip() for s in para.replace("。", "。\n").replace("！", "！\n")
-                        .replace("？", "？\n").replace("；", "；\n").split("\n") if s.strip()]
+                         .replace("？", "？\n").replace("；", "；\n").split("\n") if s.strip()]
             for sent in sentences:
                 if len(current_chunk) + len(sent) > chunk_size:
-                    if current_chunk:
-                        chunks.append(current_chunk.strip())
+                    if current_chunk.strip():
+                        chunks.append({
+                            "content": current_chunk.strip(),
+                            "title": current_title,
+                            "type": current_type,
+                            "size": len(current_chunk)
+                        })
                     current_chunk = sent
                 else:
-                    current_chunk += sent + ""
-        else:
-            if len(current_chunk) + len(para) > chunk_size:
-                chunks.append(current_chunk.strip())
-                current_chunk = para
-            else:
-                current_chunk += para + "\n"
+                    current_chunk += sent
+
     if current_chunk.strip():
-        chunks.append(current_chunk.strip())
-    if not chunks:
-        chunks = [text[:chunk_size]]
-    return chunks
+        chunks.append({
+            "content": current_chunk.strip(),
+            "title": current_title,
+            "type": current_type,
+            "size": len(current_chunk)
+        })
+
+    return chunks if chunks else [{"content": text[:chunk_size], "title": "", "type": "general", "size": len(text)}]
+
+
+# 保留旧版本用于兼容
+_chunk_text = _chunk_text_improved
 
 
 # ===== 降级：Chunks 文件存储（关键词搜索用） =====
@@ -526,6 +664,45 @@ def _load_chunks_fallback(doc_id: str) -> list:
         except (json.JSONDecodeError, IOError):
             return []
     return []
+
+
+# ===== Query 改写（关键词扩展） =====
+
+# 预定义的同义词映射
+_SYNONYMS = {
+    "减肥": ["瘦身", "减脂", "掉秤", "降体重"],
+    "价格": ["多少钱", "费用", "价位", "收费", "定价"],
+    "套餐": ["组合", "疗程", "方案", "套装"],
+    "赛乐赛": ["celece", "产品"],
+    "体验装": ["试用装", "入门装"],
+    "复购": ["回购", "续单", "再买"],
+    "效果": ["效果", "见效", "成果", "变化"],
+    "客户": ["顾客", "用户", "体验者"],
+}
+
+
+def rewrite_query(original_query: str) -> list:
+    """扩展查询词，提高命中率"""
+    queries = [original_query]
+
+    # 提取中文关键词
+    import re
+    keywords = re.findall(r'[\u4e00-\u9fa5]{2,6}', original_query)
+
+    # 同义词扩展
+    for kw in keywords:
+        if kw in _SYNONYMS:
+            queries.extend(_SYNONYMS[kw])
+
+    # 去重并限制数量
+    seen = set()
+    result = []
+    for q in queries:
+        if q not in seen and len(q) >= 2:
+            seen.add(q)
+            result.append(q)
+
+    return result[:5]
 
 
 # ===== 文档删除 =====
@@ -645,8 +822,31 @@ def search_knowledge(query: str, top_k: int = 20) -> dict:
     if not query.strip():
         return {"results": [], "mode": "empty"}
 
-    # 1. 语义搜索（sqlite-vec）
-    semantic_results, semantic_status = _semantic_search(query, top_k=50)
+    # 0. Query 改写（扩展查询词）
+    rewritten_queries = rewrite_query(query)
+
+    # 1. 语义搜索（sqlite-vec）- 使用改写后的查询
+    all_semantic = []
+    semantic_status = "ok"
+    for qw in rewritten_queries:
+        results, status = _semantic_search(qw, top_k=30)
+        if status == "ok" and results:
+            all_semantic.extend(results)
+        elif status != "ok":
+            semantic_status = status
+            break
+
+    # 去重（按 key）
+    seen_keys = set()
+    semantic_results = []
+    for item in all_semantic:
+        if item["key"] not in seen_keys:
+            seen_keys.add(item["key"])
+            semantic_results.append(item)
+
+    # 重新排名
+    for rank, item in enumerate(semantic_results):
+        item["semantic_rank"] = rank + 1
 
     # 2. 关键词搜索（始终执行，作为降级保障）
     keyword_results = []
@@ -772,10 +972,56 @@ def search_knowledge(query: str, top_k: int = 20) -> dict:
     for item in final:
         item["score"] = round(item["score"], 4)
 
+    # 6. Metadata 过滤（根据客户上下文调整权重）
+    # 从返回结果中提取 metadata 信息
+    for item in final:
+        # 尝试从内容中推断类型
+        content = item.get("content", "")
+        if "价格" in content or "套餐" in content or "多少钱" in content:
+            item["type"] = "price"
+        elif "客户" in content or "案例" in content or "使用" in content:
+            item["type"] = "case"
+        elif "问" in content or "怎么" in content or "如何" in content:
+            item["type"] = "faq"
+        else:
+            item["type"] = "general"
+
+        # 应用元数据权重（默认：price 和 case 权重更高）
+        type_weights = {
+            "price": 1.2,
+            "case": 1.1,
+            "faq": 1.0,
+            "general": 0.9
+        }
+        weight = type_weights.get(item.get("type", "general"), 1.0)
+        item["score"] = round(item.get("score", 0) * weight, 4)
+
+    # 7. 使用 Reranker 对最终结果重新排序（如果启用）
+    if _reranker_available and len(final) > 1:
+        try:
+            # 提取文档内容用于 rerank
+            doc_contents = [item.get("content", "") for item in final[:10]]
+            reranked = rerank_documents(query, doc_contents, top_n=min(top_k, len(final)))
+            if reranked:
+                # 将 reranked 结果映射回原始数据
+                reranked_results = []
+                for r in reranked:
+                    orig_idx = r.get("original_index", 0)
+                    if orig_idx < len(final):
+                        item = final[orig_idx].copy()
+                        item["rerank_score"] = r.get("relevance_score", 0)
+                        reranked_results.append(item)
+                final = reranked_results if reranked_results else final
+        except Exception as e:
+            print(f"[Rerank 跳过]: {e}")
+            pass
+
     return {
         "results": final[:top_k],
-        "mode": "hybrid",
-        "embedding_available": True
+        "mode": "hybrid_rerank" if _reranker_available else "hybrid",
+        "embedding_available": True,
+        "reranker_available": _reranker_available,
+        "rewritten_queries": rewritten_queries
     }
 
 

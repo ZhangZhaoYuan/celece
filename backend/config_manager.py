@@ -286,7 +286,8 @@ def get_embedding_config():
         "dim": emb.get("dim", emb.get("dimension", 1024)),
         "api_key": api_key,
         "api_mode": emb.get("api_mode", "openai"),
-        "dimension": emb.get("dimension", emb.get("dim", 1024))
+        "dimension": emb.get("dimension", emb.get("dim", 1024)),
+        "reranker": emb.get("reranker", {"enabled": False, "model": "bce-reranker-base"})
     }
 
 

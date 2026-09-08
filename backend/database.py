@@ -808,6 +808,132 @@ def classify_customer(customer):
         return 'treatment'
 
 
+def parse_wechat_chat(text: str, customer_id: int = None) -> list[dict]:
+    """解析微信聊天记录导出格式
+    
+    支持的格式：
+    【客户名XXX@微信 9/4 07:36:32
+    消息内容
+    
+    张兆渊(赛乐赛客服) 9/4 10:01:02
+    回复内容】
+    
+    返回：[{"role": "user/customer", "content": "...", "timestamp": "..."}, ...]
+    """
+    import re
+    from datetime import datetime
+    
+    if not text or not text.strip():
+        return []
+    
+    # 去除首尾的【】
+    text = text.strip()
+    if text.startswith('【') and text.endswith('】'):
+        text = text[1:-1].strip()
+    
+    # 匹配模式：发送者名 + 时间戳 + 消息内容
+    # 支持格式：
+    # 1. 客户名+ID@微信 9/4 07:36:32
+    # 2. 张兆渊(赛乐赛客服) 9/4 10:01:02
+    pattern = r'^(.+?)\s+(\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}:\d{2})\s*\n?(.*?)(?=$|^\S+\s+\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}:\d{2})'
+    
+    messages = []
+    current_msg = None
+    
+    for line in text.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        
+        # 检测是否为发送者行
+        # 格式1: 客户名+ID@微信/联系人 时间
+        # 格式2: 张兆渊(赛乐赛客服) 时间
+        sender_match = re.match(r'^(.+?)\s+(\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}:\d{2})$', line)
+        
+        if sender_match:
+            # 保存上一条消息
+            if current_msg:
+                messages.append(current_msg)
+            
+            sender = sender_match.group(1).strip()
+            timestamp = sender_match.group(2).strip()
+            
+            # 判断发送者角色
+            is_customer = False
+            if '张兆渊' in sender or '赛乐赛客服' in sender or '我' in sender:
+                role = 'assistant'
+            elif '@微信' in sender or '微信联系人' in sender:
+                role = 'user'
+                is_customer = True
+            else:
+                role = 'user'
+                is_customer = True
+            
+            current_msg = {
+                'role': role,
+                'content': '',
+                'timestamp': timestamp,
+                'is_customer': is_customer
+            }
+        elif current_msg is not None:
+            # 消息内容
+            if current_msg['content']:
+                current_msg['content'] += '\n' + line
+            else:
+                current_msg['content'] = line
+    
+    # 保存最后一条
+    if current_msg:
+        messages.append(current_msg)
+    
+    # 清理空内容消息
+    messages = [m for m in messages if m['content'].strip()]
+    
+    # 标准化时间格式为 YYYY-MM-DD HH:MM:SS
+    for msg in messages:
+        ts = msg['timestamp']
+        try:
+            # 尝试解析 MM/DD HH:MM:SS 格式
+            dt = datetime.strptime(f"2026-{ts}", "%Y-%m-%d %H:%M:%S")
+            msg['timestamp'] = dt.strftime("%Y-%m-%d %H:%M:%S")
+        except:
+            pass
+    
+    return messages
+
+
+def import_chat_history(customer_id: int, chat_text: str) -> dict:
+    """导入聊天记录到数据库
+    
+    Args:
+        customer_id: 客户ID
+        chat_text: 微信导出的聊天记录文本
+    
+    Returns:
+        {"imported": int, "messages": [...]}
+    """
+    parsed_msgs = parse_wechat_chat(chat_text, customer_id)
+    
+    if not parsed_msgs:
+        return {"imported": 0, "messages": [], "error": "无法解析聊天记录"}
+    
+    imported = []
+    for msg in parsed_msgs:
+        result = add_message(
+            customer_id=customer_id,
+            role=msg['role'],
+            content=msg['content'],
+            timestamp=msg['timestamp']
+        )
+        imported.append(result)
+    
+    return {
+        "imported": len(imported),
+        "messages": imported,
+        "error": None
+    }
+
+
 def group_customers():
     """获取所有客户并按分类分组（组内按拼音排序）"""
     import sqlite3

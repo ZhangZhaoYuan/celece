@@ -47,11 +47,23 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
 .chat-msg{max-width:75%;padding:8px 14px;border-radius:10px;line-height:1.5;word-break:break-word;font-size:14px}
 .chat-msg.ai{align-self:flex-start;border-bottom-left-radius:4px;background:var(--bg-surface);box-shadow:0 1px 2px rgba(0,0,0,.06)}
 .chat-msg.user{align-self:flex-end}
-.chat-msg.user .script-block{background:#DCEAF7;border-color:#c5dcf0}
-.chat-msg.user .script-block-header{background:#d0e0f5}
-.chat-msg.user .script-block-content{background:#DCEAF7}
+/* A框：AI话术 - 左侧白色气泡 */
+.chat-msg.ai-script{align-self:flex-start;border-bottom-left-radius:4px;background:#fff;border:1px solid #e5e5ea}
+/* B框：聊天记录 - 右侧浅蓝色区域 */
+.chat-msg.bubble-group{align-self:flex-end;max-width:90%;background:#DCEAF7;border-radius:12px;padding:8px 12px}
+.chat-msg.bubble-group .chat-msg{margin-bottom:8px}
+.chat-msg.bubble-group .chat-msg:last-child{margin-bottom:0}
+/* 客户消息在左，客服消息在右 */
+.chat-msg.customer{align-self:flex-start;background:#fff;border:1px solid #e5e5ea;border-radius:8px;padding:6px 10px;font-size:13px}
+.chat-msg.agent{align-self:flex-end;background:#c5dcf0;border-radius:8px;padding:6px 10px;font-size:13px}
+/* 双框布局容器 */
+.dual-frame-container{display:flex;gap:12px;align-items:flex-start}
+.frame-a{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding-right:8px;border-right:1px solid var(--border-light)}
+.frame-b{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;padding-left:8px}
+.empty-hint{text-align:center;color:var(--text-secondary);font-size:12px;padding:20px 8px}
 .chat-msg .time{font-size:10px;color:var(--text-secondary);margin-top:4px}
-.chat-msg.user .time{text-align:right}
+.chat-msg.customer .time{text-align:left}
+.chat-msg.agent .time{text-align:right}
 .chat-msg .msg-content{white-space:pre-wrap}
 .chat-msg .msg-actions{display:flex;gap:4px;margin-top:4px;opacity:0}
 .chat-msg:hover .msg-actions{opacity:1}
@@ -234,8 +246,9 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text'
                         <div id="msgInput" contenteditable="true" class="chat-input-editable" data-placeholder="输入你想说的话...（支持粘贴聊天记录）"></div>
                         <input type="file" id="customerImageInput" accept="image/*" style="display:none" onchange="uploadCustomerImage(event)" multiple>
                         <button class="img-btn" id="btnImgUpload" onclick="document.getElementById('customerImageInput').click()" title="上传图片"><i data-lucide="image"></i></button>
-                                                <button class="send-btn" id="btnSend" onclick="sendMessage()" title="发送并生成话术"><i data-lucide="send"></i></button>
-                                                                      </div>
+                        <button class="img-btn" onclick="showImportChatModal()" title="导入聊天记录"><i data-lucide="upload"></i></button>
+                        <button class="send-btn" id="btnSend" onclick="sendMessage()" title="发送并生成话术"><i data-lucide="send"></i></button>
+                      </div>
                                                                       <!-- 图片多选工具栏 -->
                                                                       
                                                       </div>
@@ -831,7 +844,7 @@ async function api(method, path, body) {
   return r.json();
 }
 function escapeHtml(s) { const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
-function jsStr(s) { return (s || '').replace(/'/g,"\\'").replace(/\n/g,"\\n").replace(/\r/g,""); }
+function jsStr(s) { return (s || "").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g,"\\n").replace(/\r/g,""); }
 
 // ===== Toast =====
 function showToast(msg) {
@@ -1176,7 +1189,7 @@ async function loadCustomerImages() {
     gallery.innerHTML = images.map(img => {
       const desc = img.description ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px">${img.description.substring(0, 60)}</div>` : '';
       return `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--bg-surface)">
-        <img src="/api/customers/images/${img.id}/file" style="width:100%;height:150px;object-fit:cover;display:block" onclick="window.open('/api/customers/images/${img.id}/file')">
+        <img src="/api/customers/images/${img.id}/file" style="width:100%;height:150px;object-fit:cover;display:block" onclick="window.open('/api/customers/images/${img.id}/file')"/>
         <div style="padding:6px 8px">
           <div style="font-size:11px;color:var(--text-secondary)">${img.original_name || img.filename}</div>
           ${desc}
@@ -1358,15 +1371,16 @@ async function removeImagePreview(previewId, imgId) {
 // ===== 消息合并函数 =====
 function mergeConsecutiveMessages(msgs) {
   if (!msgs || msgs.length === 0) return [];
-  
+
   const merged = [];
   let current = { ...msgs[0] };
-  
+
   for (let i = 1; i < msgs.length; i++) {
     const msg = msgs[i];
-    
-    // 如果角色相同，合并内容
-    if (msg.role === current.role) {
+
+    // 只有连续的同角色消息才合并（主要用于多个assistant消息）
+    // user消息不合并，保持独立显示
+    if (msg.role === current.role && msg.role === 'assistant') {
       // 追加内容
       if (current._parts) {
         current._parts.push(msg.content);
@@ -1377,15 +1391,15 @@ function mergeConsecutiveMessages(msgs) {
       // 更新时间戳为最新
       current.timestamp = msg.timestamp;
     } else {
-      // 角色不同，保存当前消息，开始新的
+      // 角色不同或非assistant消息，保存当前消息，开始新的
       merged.push(current);
       current = { ...msg };
     }
   }
-  
+
   // 添加最后一条
   merged.push(current);
-  
+
   return merged;
 }
 
@@ -1437,170 +1451,167 @@ function renderMessages() {
     el.innerHTML = '<div class="chat-empty" id="chatEmpty" style="display:flex"><div class="icon">💬</div><div>' + (selectedCustomerId ? '暂无聊天记录，发送消息开始沟通' : '请选择一个客户开始沟通') + '</div></div>';
     return;
   }
-  el.innerHTML = messages.map((m, idx) => {
-    // 新格式：含 --- 分隔的多段话术（代码块样式）
-        if (m.role === 'assistant' && m._loading) {
-          return `
-          <div class="chat-msg ai" id="msg_${idx}">
-            <div class="thinking-dots">
-              <span class="think-dot"></span>
-              <span class="think-dot"></span>
-              <span class="think-dot"></span>
-              <span class="hint">思考中...</span>
-            </div>
-          </div>`;
-        }
-        // 流式模式：_streaming=true 但还没内容时也显示思考中
-        if (m.role === 'assistant' && m._streaming && (!m._parts || m._parts.length === 0)) {
-          return `
-          <div class="chat-msg ai" id="msg_${idx}">
-            <div class="thinking-dots">
-              <span class="think-dot"></span>
-              <span class="think-dot"></span>
-              <span class="think-dot"></span>
-              <span class="hint">生成中...</span>
-            </div>
-          </div>`;
-        }
-    if (m.role === 'assistant' && m._parts && m._parts.length > 0) {
-      const isCollapsed = !m._expanded;
+
+  // 分离AI消息和用户消息
+  const aiMessages = messages.filter(m => m.role === 'assistant');
+  const userMessages = messages.filter(m => m.role === 'user');
+
+  // 构建A框（左侧）：AI话术
+  const aFrameHtml = aiMessages.map((m, idx) => {
+    const realIdx = messages.indexOf(m);
+    if (m._loading || (m._streaming && (!m._parts || m._parts.length === 0))) {
       return `
-      <div class="chat-msg ai" id="msg_${idx}">
-        <div class="script-bubble ${isCollapsed ? 'collapsed' : ''}" id="sb_${idx}">
-          ${m._parts.map((p, pi) => {
-                      // 检测是否为纯图片块
-                      const trimmed = p.trim();
-                      const isPureImage = /^\[AI图片:[^:]+:[^\]]*\]$/.test(trimmed);
-                                            if (isPureImage) {
-                                                                                          const match = trimmed.match(/^\[AI图片:([^:]+):([^\]]*)\]$/);
-                                                                                          const filename = match ? match[1] : '';
-                                                                                          const desc = match ? match[2] : '';
-                                                                                          // 查找相似图片
-                                                                                          var simHtml = '';
-                                                                                          if (m._local_matches && m._local_matches.length > 0) {
-                                                                                            simHtml = renderSimilarImages(m._local_matches);
-                                                                                          }
-                                                                                          return `
-                                                                                      <div class="script-block generated-image-card">
-                                                                                        <div class="script-block-header" style="justify-content:space-between">
-                                                                                          <span style="font-size:12px;color:#999">📷 生成图片</span>
-                                                                                          <div style="display:flex;gap:4px">
-                                                                                            <button class="cp-btn" onclick="copyGenImage('${filename}','${desc}')" title="复制图片到剪贴板">📋</button>
-                                                                                          </div>
-                                                                                        </div>
-                                                                                        <div class="generated-image-content">
-                                                                                          <img src="/api/generated_images/${filename}" alt="${desc}"  onclick="zoomImage('/api/generated_images/${filename}','${desc}')" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer">
-                                                                                          <div class="generated-image-desc">${escapeHtml(desc)}</div>
-                                                                                          ${simHtml}
-                                                                                        </div>
-                                                                                      </div>`;
-                                            }
-                                            // 检测待生成的图片标记（支持部分包含）
-                                                                                        const imgMatch = trimmed.match(/\[生成图片:\s*[\s\S]*?\]/);
-                                                                                        const isPendingImg = imgMatch !== null;
-                                            if (isPendingImg) {
-                                                                                                                              const imgDesc = imgMatch[1];
-                                                                                                                              const taskId = 'genimg_' + idx + '_' + pi;
-                                                                                                                              // 如果已经搜索过本地图片，直接渲染搜索结果
-                                                                                                                              if (m._imageSearchResults && m._imageSearchResults[pi]) {
-                                                                                                                                const searchResult = m._imageSearchResults[pi];
-                                                                                                                                if (searchResult.localImages && searchResult.localImages.length > 0) {
-                                                                                                                                  // 有本地匹配 → 展示缩略图
-                                                                                                                                  window._zoomImageList = searchResult.localImages.map(function(img){ return '/api/image-index/images/' + img.id; });
-                                                                                                                                  let thumbsHtml = searchResult.localImages.map((img, thumbIdx) => {
-                                                                                                                                    const imgId = img.id;
-                                                                                                                                    const thumbPath = '/api/image-index/images/' + imgId;
-                                                                                                                                    const cat = escapeHtml(img.category || '');
-                                                                                                                                    const desc = escapeHtml((img.description || '').slice(0, 40));
-                                                                                                                                    return '<div style="position:relative;display:inline-block;width:120px;margin:3px;cursor:pointer;vertical-align:top;border-radius:6px;overflow:hidden;background:#fafafa" onclick="event.stopPropagation();zoomImage(\'' + thumbPath + '\',\'' + jsStr(img.description) + '\',window._zoomImageList||[],' + thumbIdx + ')">' +
-                                                                                                                                      '<img src="' + thumbPath + '" style="width:100%;height:auto;aspect-ratio:1;object-fit:cover;display:block" onerror="this.style.display=\'none\'" loading="lazy">' +
-                                                                                                                                      '<div style="font-size:10px;color:#999;padding:3px 6px;background:rgba(255,255,255,0.9);border-top:1px solid #eee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="event.stopPropagation();navigateToImageCategory(\'' + jsStr(img.category) + '\',' + imgId + ')" title="点击跳转到该分类">' + (cat || '未分类') + '</div>' +
-                                                                                                                                      '</div>';
-                                                                                                                                  }).join('');
-                                                                                                                                  return '<div class="gen-progress-card gen-placeholder-card" id="' + taskId + '"><div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 本地图片匹配</span></div><div style="display:flex;flex-wrap:wrap;padding:6px">' + thumbsHtml + '</div></div>';
-                                                                                                                                } else {
-                                                                                                                                  // 无本地匹配 → 占位图
-                                                                                                                                  const escapedDesc = escapeHtml(imgDesc);
-                                                                                                                                  return '<div class="gen-progress-card gen-placeholder-card" id="' + taskId + '"><div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 图片占位</span></div><div class="gen-placeholder-box" style="padding:16px;text-align:center"><div style="font-size:40px;margin-bottom:8px">🖼️</div><div style="font-size:13px;color:#666;margin-bottom:8px">未找到匹配图片</div><div class="gen-prompt-box" style="background:#f5f5f5;border-radius:6px;padding:10px;margin:8px 0;font-size:12px;color:#333;text-align:left;word-break:break-all">' + escapedDesc + '</div><button class="cp-btn" onclick="copyTextToClipboard(\'' + escapedDesc.replace(/'/g, "\\'") + '\')" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button></div></div>';
-                                                                                                                                }
-                                                                                                                              }
-                                                                                                                              // 没搜索过 → 显示占位骨架
-                                                                                                                              // 查找相似图片
-                                                                                                                              var pendingSimHtml = '';
-                                                                                                                              if (m._pending_image_matches && m._pending_image_matches[imgDesc]) {
-                                                                                                                                pendingSimHtml = renderSimilarImageThumbs(m._pending_image_matches[imgDesc]);
-                                                                                                                              }
-                                                                                                                              // 占位符：灰色背景框 + 取消按钮
-                                                                                                                              return `
-                                                                                                                          <div class="gen-progress-card gen-placeholder-card" id="${taskId}">
-                                                                                                                            <div class="gen-progress-header">
-                                                                                                                              <span style="font-size:12px;color:#999">🖼️ 生成图片</span>
-                                                                                                                              <button class="gen-action-btn gen-cancel-btn" id="${taskId}_cancel" onclick="cancelGenImg('${taskId}')">✕ 取消</button>
-                                                                                                                            </div>
-                                                                                                                            <div class="gen-prompt-box">${escapeHtml(imgDesc)}</div>
-                                                                                                                            ${pendingSimHtml}
-                                                                                                                            <div class="gen-progress-bar" style="margin-top:8px">
-                                                                                                                              <div class="fill" id="${taskId}_bar" style="width:0%"></div>
-                                                                                                                            </div>
-                                                                                                                            <div id="${taskId}_status" style="font-size:11px;color:#999;margin-top:4px">准备中 0%</div>
-                                                                                                                          </div>`;
-                                            }
-                      return `
-                    <div class="script-block">
-                      <div class="script-block-header"><button class="cp-btn" onclick="copyPart(${idx}, ${pi})">📋</button></div>
-                      <div class="script-block-content">${renderAiImages(p)}</div>
-                    </div>`;
-                    }).join('')}
-                    </div>
-                    <div class="msg-actions">
-                      <button onclick="${isCollapsed ? `expandScript(${idx})` : `collapseScript(${idx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
-                      <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+      <div class="chat-msg ai-script" id="msg_${realIdx}">
+        <div class="thinking-dots">
+          <span class="think-dot"></span>
+          <span class="think-dot"></span>
+          <span class="think-dot"></span>
+          <span class="hint">思考中...</span>
         </div>
-        <div class="time">${escapeHtml(m.timestamp || '')}</div>
       </div>`;
     }
-    // 用户消息：白色代码块，底部展开/折叠+删除，悬停显示
-        if (m.role === 'user') {
-          if (!m._parts || m._parts.length === 0) {
-            m._parts = [m.content];
-          }
-          const isCollapsed = !m._expanded;
-          const lines = m._parts[0].split('\n');
-          const longContent = m._parts[0].length > 80 || lines.length > 3;
-          const showFold = longContent;
-          return `
-          <div class="chat-msg user" onmouseenter="this.querySelector('.msg-actions').style.display='flex'" onmouseleave="this.querySelector('.msg-actions').style.display='none'">
-            <div class="script-block" style="margin-bottom:0">
-            <div class="script-block-header" style="justify-content:space-between">
-              <span style="font-size:10px;color:#999">${escapeHtml(m.timestamp || '')}</span>
-              <div>
-                <button class="cp-btn" onclick="event.stopPropagation();copyMessage(${idx})" title="复制">📋</button>
-              </div>
-            </div>
-            <div class="script-block-content ${isCollapsed && showFold ? 'collapsed' : ''}" id="sbContent_${idx}" style="${isCollapsed && showFold ? 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden' : ''}">${escapeHtml(m._parts[0])}</div>
-            </div>
-            ${showFold ? `<div class="msg-actions" style="display:none">
-              <button onclick="${isCollapsed ? `expandScript(${idx})` : `collapseScript(${idx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
-              <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
-            </div>` : `<div class="msg-actions" style="display:none">
-              <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
-            </div>`}
-          </div>`;
+    if (m._parts && m._parts.length > 0) {
+      const isCollapsed = !m._expanded;
+      return `
+      <div class="chat-msg ai-script" id="msg_${realIdx}">
+        <div class="script-bubble ${isCollapsed ? 'collapsed' : ''}" id="sb_${realIdx}">
+          ${m._parts.map((p, pi) => {
+            const trimmed = p.trim();
+            const isPureImage = /^\[AI图片:[^:]+:[^\]]*\]$/.test(trimmed);
+            if (isPureImage) {
+              const match = trimmed.match(/^\[AI图片:([^:]+):([^\]]*)\]$/);
+              const filename = match ? match[1] : '';
+              const desc = match ? match[2] : '';
+              var simHtml = '';
+              if (m._local_matches && m._local_matches.length > 0) {
+                simHtml = renderSimilarImages(m._local_matches);
+              }
+              return `
+              <div class="script-block generated-image-card">
+                <div class="script-block-header" style="justify-content:space-between">
+                  <span style="font-size:12px;color:#999">📷 生成图片</span>
+                  <div style="display:flex;gap:4px">
+                    <button class="cp-btn" onclick="copyGenImage('${filename}','${desc}')" title="复制图片到剪贴板">📋</button>
+                  </div>
+                </div>
+                <div class="generated-image-content">
+                  <img src="/api/generated_images/${filename}" alt="${desc}" onclick="zoomImage('/api/generated_images/${filename}','${desc}')" loading="lazy" style="max-width:100%;max-height:400px;border-radius:4px;cursor:pointer">
+                  <div class="generated-image-desc">${escapeHtml(desc)}</div>
+                  ${simHtml}
+                </div>
+              </div>`;
+            }
+            const imgMatch = trimmed.match(/\[生成图片:\s*[\s\S]*?\]/);
+            const isPendingImg = imgMatch !== null;
+            if (isPendingImg) {
+              const imgDesc = imgMatch[1];
+              const taskId = 'genimg_' + realIdx + '_' + pi;
+              if (m._imageSearchResults && m._imageSearchResults[pi]) {
+                const searchResult = m._imageSearchResults[pi];
+                if (searchResult.localImages && searchResult.localImages.length > 0) {
+                  window._zoomImageList = searchResult.localImages.map(function(img){ return '/api/image-index/images/' + img.id; });
+                  let thumbsHtml = searchResult.localImages.map((img, thumbIdx) => {
+                    const imgId = img.id;
+                    const thumbPath = '/api/image-index/images/' + imgId;
+                    const cat = escapeHtml(img.category || '');
+                    const desc = escapeHtml((img.description || '').slice(0, 40));
+                    return '<div style="position:relative;display:inline-block;width:120px;margin:3px;cursor:pointer;vertical-align:top;border-radius:6px;overflow:hidden;background:#fafafa" onclick="event.stopPropagation();zoomImage(\'' + thumbPath + '\',\'' + jsStr(img.description) + '\',window._zoomImageList||[],' + thumbIdx + ')">' +
+                      '<img src="' + thumbPath + '" style="width:100%;height:auto;aspect-ratio:1;object-fit:cover;display:block"/>' +
+                      '<div style="font-size:10px;color:#999;padding:3px 6px;background:rgba(255,255,255,0.9);border-top:1px solid #eee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="event.stopPropagation();navigateToImageCategory(\'' + jsStr(img.category) + '\',' + imgId + ')" title="点击跳转到该分类">' + (cat || '未分类') + '</div>' +
+                      '</div>';
+                  }).join('');
+                  return '<div class="gen-progress-card gen-placeholder-card" id="' + taskId + '"><div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 本地图片匹配</span></div><div style="display:flex;flex-wrap:wrap;padding:6px">' + thumbsHtml + '</div></div>';
+                } else {
+                  const escapedDesc = escapeHtml(imgDesc);
+                  return '<div class="gen-progress-card gen-placeholder-card" id="' + taskId + '"><div class="gen-progress-header"><span style="font-size:12px;color:#999">🖼️ 图片占位</span></div><div class="gen-placeholder-box" style="padding:16px;text-align:center"><div style="font-size:40px;margin-bottom:8px">🖼️</div><div style="font-size:13px;color:#666;margin-bottom:8px">未找到匹配图片</div><div class="gen-prompt-box" style="background:#f5f5f5;border-radius:6px;padding:10px;margin:8px 0;font-size:12px;color:#333;text-align:left;word-break:break-all">' + escapedDesc + '</div><button class="cp-btn" onclick="copyTextToClipboard(this.dataset.escaped)" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button></div></div>';
+                }
+              }
+              var pendingSimHtml = '';
+              if (m._pending_image_matches && m._pending_image_matches[imgDesc]) {
+                pendingSimHtml = renderSimilarImageThumbs(m._pending_image_matches[imgDesc]);
+              }
+              return `
+              <div class="gen-progress-card gen-placeholder-card" id="${taskId}">
+                <div class="gen-progress-header">
+                  <span style="font-size:12px;color:#999">🖼️ 生成图片</span>
+                  <button class="gen-action-btn gen-cancel-btn" id="${taskId}_cancel" onclick="cancelGenImg('${taskId}')">✕ 取消</button>
+                </div>
+                <div class="gen-prompt-box">${escapeHtml(imgDesc)}</div>
+                ${pendingSimHtml}
+                <div class="gen-progress-bar" style="margin-top:8px">
+                  <div class="fill" id="${taskId}_bar" style="width:0%"></div>
+                </div>
+                <div id="${taskId}_status" style="font-size:11px;color:#999;margin-top:4px">准备中 0%</div>
+              </div>`;
+            }
+            return `
+            <div class="script-block">
+              <div class="script-block-header"><button class="cp-btn" onclick="copyPart(${realIdx}, ${pi})">📋</button></div>
+              <div class="script-block-content">${renderAiImages(p)}</div>
+            </div>`;
+          }).join('')}
+          <div class="msg-actions">
+            <button onclick="${isCollapsed ? `expandScript(${realIdx})` : `collapseScript(${realIdx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
+            <button class="del-btn" onclick="deleteMessage(${m.id}, ${realIdx})">删除</button>
+          </div>
+          <div class="time">${escapeHtml(m.timestamp || '')}</div>
+        </div>
+      </div>`;
     }
-    // 旧格式：AI普通文本气泡（兼容老数据）
+    // 旧格式：AI普通文本气泡
     const lines = m.content.split('\n').length;
     const isLong = lines > 5;
     return `
-    <div class="chat-msg ai">
-      <div class="msg-content ${isLong ? 'collapsed' : ''}" id="msgContent_${idx}">${escapeHtml(m.content)}</div>
+    <div class="chat-msg ai-script">
+      <div class="msg-content ${isLong ? 'collapsed' : ''}" id="msgContent_${realIdx}">${escapeHtml(m.content)}</div>
       <div class="msg-actions">
-        ${isLong ? `<button onclick="toggleMsgExpand(${idx})" id="expandBtn_${idx}">展开 ▾</button>` : ''}
-        <button onclick="copyAiText(${idx})" title="复制">📋</button>
-        <button class="del-btn" onclick="deleteMessage(${m.id}, ${idx})">删除</button>
+        ${isLong ? `<button onclick="toggleMsgExpand(${realIdx})" id="expandBtn_${realIdx}">展开 ▾</button>` : ''}
+        <button onclick="copyAiText(${realIdx})" title="复制">📋</button>
+        <button class="del-btn" onclick="deleteMessage(${m.id}, ${realIdx})">删除</button>
       </div>
       <div class="time">${escapeHtml(m.timestamp || '')}</div>
     </div>`;
   }).join('');
+
+  // 构建B框（右侧）：聊天记录
+  const bFrameHtml = userMessages.map((m, idx) => {
+    const realIdx = messages.indexOf(m);
+    if (!m._parts || m._parts.length === 0) {
+      m._parts = [m.content];
+    }
+    const isCollapsed = !m._expanded;
+    const lines = m._parts[0].split('\n');
+    const longContent = m._parts[0].length > 80 || lines.length > 3;
+    const showFold = longContent;
+    // 判断是客服消息还是客户消息
+    const isAgentMsg = m.content.includes('张兆渊') || m.content.includes('赛乐赛客服');
+    const msgClass = isAgentMsg ? 'agent' : 'customer';
+    return `
+    <div class="chat-msg ${msgClass}" onmouseenter="this.querySelector('.msg-actions').style.display='flex'" onmouseleave="this.querySelector('.msg-actions').style.display='none'">
+      <div class="script-block" style="margin-bottom:0">
+        <div class="script-block-header" style="justify-content:space-between">
+          <span style="font-size:10px;color:#999">${escapeHtml(m.timestamp || '')}</span>
+          <div>
+            <button class="cp-btn" onclick="event.stopPropagation();copyMessage(${realIdx})" title="复制">📋</button>
+          </div>
+        </div>
+        <div class="script-block-content ${isCollapsed && showFold ? 'collapsed' : ''}" id="sbContent_${realIdx}" style="${isCollapsed && showFold ? 'display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden' : ''}">${escapeHtml(m._parts[0])}</div>
+      </div>
+      ${showFold ? `<div class="msg-actions" style="display:none">
+        <button onclick="${isCollapsed ? `expandScript(${realIdx})` : `collapseScript(${realIdx})`}">${isCollapsed ? '展开 ▾' : '收起 ▴'}</button>
+        <button class="del-btn" onclick="deleteMessage(${m.id}, ${realIdx})">删除</button>
+      </div>` : `<div class="msg-actions" style="display:none">
+        <button class="del-btn" onclick="deleteMessage(${m.id}, ${realIdx})">删除</button>
+      </div>`}
+    </div>`;
+  }).join('');
+
+  // 组合双框布局
+  el.innerHTML = `
+    <div class="dual-frame-container">
+      <div class="frame-a">${aFrameHtml || '<div class="empty-hint">暂无AI话术</div>'}</div>
+      <div class="frame-b">${bFrameHtml || '<div class="empty-hint">暂无聊天记录</div>'}</div>
+    </div>`;
   el.scrollTop = el.scrollHeight;
 }
 function toggleMsgExpand(idx) {
@@ -1615,13 +1626,18 @@ async function deleteMessage(msgId, idx) {
   const ok = await showConfirm('确定删除此消息？', '删除消息');
   if (!ok) return;
   try {
-    await api('DELETE', `/api/messages/${msgId}`);
-    // 用msgId找当前索引，避免idx过期
-    const realIdx = messages.findIndex(m => m.id === msgId);
-    if (realIdx !== -1) {
-      messages.splice(realIdx, 1);
+    const resp = await api('DELETE', `/api/messages/${msgId}`);
+    if (resp.status === 'ok') {
+      // 删除成功后重新加载消息列表，确保状态一致
+      await loadMessages(selectedCustomerId);
+    } else {
+      // 用msgId找当前索引，避免idx过期
+      const realIdx = messages.findIndex(m => m.id === msgId);
+      if (realIdx !== -1) {
+        messages.splice(realIdx, 1);
+        renderMessages();
+      }
     }
-    renderMessages();
   } catch(e) { showToast('删除失败: '+e.message); }
 }
 function copyAiText(idx) {
@@ -1735,7 +1751,10 @@ async function sendMessage() {
         savedResp = await api('POST', `/api/customers/${currentCid}/messages`, {
           role: 'assistant', content: scriptContent, timestamp: ts, session_id: sessionId
         });
-      } catch(e) { /* 静默 */ }
+      } catch(e) {
+        console.error('保存assistant消息失败:', e);
+        showToast('⚠️ 话术保存失败: ' + e.message);
+      }
 
       // 更新前端显示
       const loadIdx = messages.indexOf(loadingMsg);
@@ -1830,7 +1849,7 @@ async function processPendingImages(loadIdx, parts, savedMsgId, sessionId, ts, l
                 const desc = escapeHtml((img.description || '').slice(0, 40));
                 const isSelected = selectedImageIds && selectedImageIds.has('chat_' + imgId);
                 return '<div style="position:relative;display:inline-block;width:120px;margin:3px;cursor:pointer;vertical-align:top;border-radius:6px;overflow:hidden;background:#fafafa" onclick="event.stopPropagation();zoomImage(\'' + thumbPath + '\',\'' + jsStr(img.description) + '\',window._zoomImageList||[],' + idx + ')">' +
-                  '<img src="' + thumbPath + '" style="width:100%;height:auto;aspect-ratio:1;object-fit:cover;display:block" onerror="this.style.display=\'none\'" loading="lazy">' +
+                  '<img src="' + thumbPath + '" style="width:100%;height:auto;aspect-ratio:1;object-fit:cover;display:block"/>' +
                   '<div style="font-size:10px;color:#999;padding:3px 6px;background:rgba(255,255,255,0.9);border-top:1px solid #eee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="event.stopPropagation();navigateToImageCategory(\'' + jsStr(img.category) + '\',' + imgId + ')" title="点击跳转到该分类">' + (cat || '未分类') + '</div>' +
                   '</div>';
               }).join('');
@@ -1846,7 +1865,7 @@ async function processPendingImages(loadIdx, parts, savedMsgId, sessionId, ts, l
           '  <div style="font-size:40px;margin-bottom:8px">🖼️</div>' +
           '  <div style="font-size:13px;color:#666;margin-bottom:8px">未找到匹配图片</div>' +
           '  <div class="gen-prompt-box" style="background:#f5f5f5;border-radius:6px;padding:10px;margin:8px 0;font-size:12px;color:#333;text-align:left;word-break:break-all">' + escapedDesc + '</div>' +
-          '  <button class="cp-btn" onclick="copyTextToClipboard(\'' + escapedDesc.replace(/'/g, "\\'") + '\')" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button>' +
+          '  <button class="cp-btn" data-escaped="' + escapedDesc + '" onclick="copyTextToClipboard(this.dataset.escaped)" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button>' +
           '</div>';
       }
     } catch(e) {
@@ -1857,7 +1876,7 @@ async function processPendingImages(loadIdx, parts, savedMsgId, sessionId, ts, l
         '<div class="gen-placeholder-box" style="padding:16px;text-align:center">' +
         '  <div style="font-size:40px;margin-bottom:8px">🖼️</div>' +
         '  <div class="gen-prompt-box" style="background:#f5f5f5;border-radius:6px;padding:10px;margin:8px 0;font-size:12px;color:#333;text-align:left;word-break:break-all">' + escapedDesc + '</div>' +
-        '  <button class="cp-btn" onclick="copyTextToClipboard(\'' + escapedDesc.replace(/'/g, "\\'") + '\')" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button>' +
+        '  <button class="cp-btn" data-escaped="' + escapedDesc + '" onclick="copyTextToClipboard(this.dataset.escaped)" style="margin-top:8px;padding:6px 16px;background:var(--primary);color:#fff;border:none;border-radius:4px;cursor:pointer">📋 复制提示词</button>' +
         '</div>';
     }
   }
@@ -1961,7 +1980,7 @@ async function navigateToImageCategory(categoryName, imageId) {
         var imgDesc = (img.description || '').slice(0, 30);
         var imgCat = img.category || '';
         similarHtml += '<div class="similar-img-thumb" onclick="window.open(\'/api/image-index/images/' + imgId + '\')" title="' + escapeHtml(imgDesc) + '" style="width:60px;height:60px;border-radius:6px;overflow:hidden;cursor:pointer;border:1px solid #eee;background:#f5f5f5;display:flex;align-items:center;justify-content:center;font-size:10px;color:#999;position:relative">';
-        similarHtml += '<img src="/api/image-index/images/' + imgId + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\';this.parentNode.textContent=\'📷\'">';
+        similarHtml += '<img src="/api/image-index/images/' + imgId + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy">';
         similarHtml += '</div>';
         count++;
       }
@@ -1982,9 +2001,9 @@ async function navigateToImageCategory(categoryName, imageId) {
                 var imgDesc = (img.description || '').slice(0, 20);
                 var thumbPath = '/api/image-index/images/' + imgId;
                 var isSelected = selectedImageIds && selectedImageIds.has('chat_' + imgId);
-                html += '<div style="position:relative;width:calc(33% - 3px);aspect-ratio:1;border-radius:4px;overflow:hidden;cursor:pointer;background:#f5f5f5;display:inline-block;vertical-align:top;margin:1.5px" onclick="event.stopPropagation();zoomImage(\'' + thumbPath + '\',\'' + jsStr(img.description) + '\',window._zoomImageList||[],' + idx + ')">';
-                html += '<img src="' + thumbPath + '" alt="' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\'">';
-                html += '<div style="font-size:9px;color:#999;padding:2px 4px;background:rgba(255,255,255,0.9);position:absolute;bottom:0;left:0;right:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="event.stopPropagation();navigateToImageCategory(\'' + jsStr(img.category) + '\',' + imgId + ')" title="点击跳转到该分类">' + escapeHtml(img.category || '') + '</div>';
+                html += '<div style="position:relative;width:calc(33% - 3px);aspect-ratio:1;border-radius:4px;overflow:hidden;cursor:pointer;background:#f5f5f5;display:inline-block;vertical-align:top;margin:1.5px" onclick="event.stopPropagation();zoomImage(\'' + thumbPath + '\',\'' + jsStr(img.description) + '\',window._zoomImageList||[],' + i + ')">';
+                html += '<img src=" ' + thumbPath + '" alt=" ' + escapeHtml(imgDesc) + '" style="width:100%;height:100%;object-fit:cover" loading="lazy">';
+                html += '<div style="font-size:9px;color:#999;padding:2px 4px;background:rgba(255,255,255,0.9);position:absolute;bottom:0;left:0;right:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer" onclick="event.stopPropagation();navigateToImageCategory(\'' + jsStr(img.category) + '\',' + imgId + ')"> ' + escapeHtml(img.category || '') + '</div>';
                 html += '</div>';
                 count++;
               }
@@ -2039,10 +2058,7 @@ async function generateScript(userText) {
   // 获取设置
   const settingsResp = await api('GET', '/api/settings');
   const settings = settingsResp || {};
-  
-  // 携带最近上传的图片ID
-  const imageIds = [...recentlyUploadedImageIds];
-  
+
   // 生成话术
     const tags = getTagsFromInput();
     const genResp = await api('POST', '/api/generate', {
@@ -2051,7 +2067,6 @@ async function generateScript(userText) {
       settings: settings,
       tags: tags,
       current_time: (function(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');})(),
-      image_ids: imageIds
     });
   
   // 图片预览已由 sendMessage 在发送时立即清除
@@ -2998,7 +3013,7 @@ async function searchKnowledgeImages() {
           const imgSrc = `/api/knowledge/images/${img.id}/file`;
           container.innerHTML += `
             <div style="background:var(--bg-surface);border-radius:8px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.1)">
-              <img src="${imgSrc}" alt="${img.filename}" style="width:100%;height:150px;object-fit:cover" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2280%22>🖼️</text></svg>'">
+              <img src="${imgSrc}" alt="${img.filename}" style="width:100%;height:150px;object-fit:cover">
               <div style="padding:10px">
                 <div style="font-size:12px;font-weight:600;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${img.filename}</div>
                 <div style="font-size:11px;color:var(--text-secondary);line-height:1.4;max-height:40px;overflow:hidden">${img.description?.substring(0, 80) || '暂无描述'}</div>
@@ -3398,7 +3413,7 @@ function renderBannedWords() {
     return;
   }
   el.innerHTML = _bannedWords.map(function(w) {
-      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:#f0f0f0;border-radius:16px;font-size:13px;cursor:pointer" onclick="deleteBannedWord(\'' + w.replace(/'/g,"\\'") + '\')"><span>' + w + '</span><span style="color:#e53935;font-size:14px;font-weight:700;margin-left:2px">✕</span></span>';
+      return '<span style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:#f0f0f0;border-radius:16px;font-size:13px;cursor:pointer" onclick="deleteBannedWord(\'' + jsStr(w) + '\')"><span>' + w + '</span><span style="color:#e53935;font-size:14px;font-weight:700;margin-left:2px">✕</span></span>';
     }).join('');
 }
 async function addBannedWord() {
@@ -3840,7 +3855,7 @@ async function init() {
   } catch(e) {
     showToast('❌ 无法连接后端服务，请确认服务已启动');
   }
-  
+
   // 2. 检查模型配置
   try {
     const cfg = await api('GET', '/api/config');
@@ -3850,7 +3865,7 @@ async function init() {
       showToast('⚠️ API KEY 格式似乎不正确，请在设置中检查');
     }
   } catch(e) { /* 静默 */ }
-  
+
   await loadModelInfo();
   await loadCustomers();
   await loadTags();
@@ -3864,7 +3879,12 @@ async function init() {
     }
   } catch(e) { /* 静默 */ }
 }
-init();
+// 等待DOM加载完成再执行初始化
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => init());
+} else {
+  init();
+}
 // ===== 图片多选+放大 =====
 let selectedImageIds = new Set();
 let selectedImageItems = [];
@@ -4450,7 +4470,7 @@ async function imageIndexSelectFolder() {
         const batch = folder.files.slice(i, Math.min(i + BATCH, folder.files.length));
         const progText = `第${folderIdx}/${folderStats.length}文件夹 -- ${i+1}/${folder.files.length}张图`;
         _taskOverlayHtml = '<div style="background:var(--bg-surface,#fff);border-radius:12px;padding:24px 32px;min-width:380px;max-width:500px;position:relative">' +
-          '<button onclick="_taskMinimized=true;hideTaskOverlay();showTaskMiniBadge(\'' + progText + '\');" style="position:absolute;top:8px;right:8px;border:none;background:var(--bg-secondary,#eee);border-radius:4px;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:24px;text-align:center">−</button>' +
+          '<button onclick="_taskMinimized=true;hideTaskOverlay();showTaskMiniBadge(\'' + jsStr(progText) + '\');" style="position:absolute;top:8px;right:8px;border:none;background:var(--bg-secondary,#eee);border-radius:4px;width:24px;height:24px;cursor:pointer;font-size:14px;line-height:24px;text-align:center">−</button>' +
           '<div style="font-size:13px;color:var(--text-secondary,#888);margin-bottom:4px">📤 上传中</div>' +
           '<div style="font-size:15px;font-weight:600;margin-bottom:12px">' + progText + '</div>' +
           '<div style="font-size:12px;color:var(--text-secondary,#888);margin-bottom:4px">总进度: ' + totalNew + '/' + totalImages + ' 张</div>' +
@@ -4591,7 +4611,7 @@ window.showPage = function(page) {
           _selectedSubcat = name;
           // 高亮列表项
           document.querySelectorAll('#subcatList .kb-list-item').forEach(function(el){el.classList.remove('active');});
-          const item = document.querySelector('#subcatList .kb-list-item[onclick*="' + escapeHtml(name).replace(/'/g,"\\'") + '"]');
+          const item = document.querySelector('#subcatList .kb-list-item[onclick*="' + escapeHtml(name).replace(/'/g,"\'") + '"]');
           if (item) item.classList.add('active');
           // 在右侧面板显示详情
           const detail = document.getElementById('subcatDetail');
@@ -4752,7 +4772,7 @@ window.showPage = function(page) {
           const useCount = img.use_count || 0;
           html += '<tr id="img_' + img.id + '" style="border-bottom:1px solid var(--border)">';
           html += '<td style="padding:6px;text-align:center"><input type="checkbox" class="img-checkbox" value="' + img.id + '"></td>';
-          html += '<td style="padding:6px;text-align:center"><img src="/api/image-index/images/' + img.id + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="openImagePreview(\'/api/image-index/images/' + img.id + '\')" onerror="this.outerHTML=\'<div style=\\\'width:40px;height:40px;background:var(--bg-secondary);border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:16px\\\'>🖼</div>\'"></td>';
+          html += '<td style="padding:6px;text-align:center"><img src="/api/image-index/images/' + img.id + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick=\'openImagePreview("/api/image-index/images/' + img.id + '")\'></td>';
           html += '<td style="padding:6px;text-align:center;font-size:11px;color:var(--text-secondary)">' + img.id + '</td>';
           html += '<td style="padding:6px;word-break:break-word;max-width:220px">' + escapeHtml(desc.substring(0,120)) + (desc.length>120?'...':'') + '</td>';
           html += '<td style="padding:6px;font-size:11px;color:var(--accent)">' + escapeHtml(tags.substring(0,50)) + '</td>';
@@ -5074,7 +5094,7 @@ window.showPage = function(page) {
               const desc = img.description || '';
               html += '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #f0f0f0">';
               html += '<input type="checkbox" class="copy-checkbox" value="' + img.id + '">';
-              html += '<img src="/api/image-index/images/' + img.id + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="openImagePreview(\'/api/image-index/images/' + img.id + '\')" onerror="this.style.display=\'none\'">';
+              html += '<img src="/api/image-index/images/' + img.id + '" style="width:36px;height:36px;object-fit:cover;border-radius:4px;cursor:pointer" onclick=\'openImagePreview("/api/image-index/images/' + img.id + '")\'>';
               html += '<span style="flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtml(desc.substring(0,60)) + '</span>';
               html += '<span style="font-size:11px;color:var(--accent)">' + (Array.isArray(img.tags) ? img.tags.slice(0,2).join(', ') : '') + '</span>';
               html += '</div>';
@@ -5296,19 +5316,77 @@ async function loadFollowUpData() {
     renderCustomerList();
   } catch(e) { /* 静默 */ }
 }
+
+// ===== 导入聊天记录 =====
+function showImportChatModal() {
+  if (!selectedCustomerId) {
+    showToast('请先选择一个客户');
+    return;
+  }
+  document.getElementById('importChatText').value = '';
+  document.getElementById('importChatPreview').style.display = 'none';
+  showModal('importChatDialog');
+}
+
+async function importChatHistory() {
+  const text = document.getElementById('importChatText').value.trim();
+  if (!text) {
+    showToast('请先粘贴聊天记录');
+    return;
+  }
+  try {
+    const resp = await api('POST', `/api/customers/${selectedCustomerId}/chat/import`, { chat_text: text });
+    if (resp.error) {
+      showToast('导入失败: ' + resp.error);
+      return;
+    }
+    const count = resp.imported || 0;
+    showToast(`✅ 成功导入 ${count} 条消息`);
+    closeModal('importChatDialog');
+    loadMessages(selectedCustomerId);
+  } catch(e) {
+    showToast('导入失败: ' + e.message);
+  }
+}
 </script>
-    </body>
-    </html
-      <!-- 跟进提醒页面 -->
-      <div class="hidden" id="pageFollowUp" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
-        <div class="followup-toolbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--bg-surface)">
-          <span style="font-size:14px;font-weight:600">🔔 跟进提醒</span>
-          <span id="followupTotalBadge" style="font-size:12px;color:var(--text-secondary);margin-left:8px"></span>
-          <button class="btn-icon" onclick="showPage('chat')" style="margin-left:auto;width:28px;height:28px" title="关闭"><i data-lucide="x" style="width:13px;height:13px"></i></button>
-        </div>
-        <div style="display:flex;flex:1;overflow:hidden">
-          <div id="followupList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div>
-          <div id="followupDetail" style="flex:1;overflow-y:auto;padding:20px 24px"><div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个客户查看跟进详情</div></div>
-        </div>
+
+<!-- 导入聊天记录弹窗 -->
+<div class="hidden modal-overlay" id="importChatDialog" style="display:none">
+  <div class="modal-card" style="width:640px">
+    <div class="modal-header">
+      <h3>📥 导入微信聊天记录</h3>
+      <button class="modal-close-btn" onclick="closeModal('importChatDialog')">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px 20px">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
+        粘贴微信导出的聊天记录，系统将自动解析并导入到当前客户。
+      </p>
+      <textarea id="importChatText" rows="12"
+        style="width:100%;padding:12px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;resize:vertical;background:var(--bg)"
+        placeholder="【A2588魏女士165.126.50@微信@微信联系人 9/4 07:36:32
+61.2
+
+张兆渊(赛乐赛客服) 9/4 10:01:02
+上午好姐姐，昨天是不是比较忙呢？...】"></textarea>
+      <div id="importChatPreview" style="margin-top:12px;padding:12px;background:var(--bg);border-radius:6px;font-size:13px;display:none"></div>
+    </div>
+    <div class="modal-footer" style="padding:12px 20px;border-top:1px solid var(--border-light);display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeModal('importChatDialog')">取消</button>
+      <button class="btn btn-primary" onclick="importChatHistory()">📥 导入</button>
+    </div>
+  </div>
+  </div>
+    <!-- 跟进提醒页面 -->
+    <div class="hidden" id="pageFollowUp" style="display:none;flex:1;flex-direction:column;overflow:hidden;min-height:0">
+      <div class="followup-toolbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--border-light);background:var(--bg-surface)">
+        <span style="font-size:14px;font-weight:600">🔔 跟进提醒</span>
+        <span id="followupTotalBadge" style="font-size:12px;color:var(--text-secondary);margin-left:8px"></span>
+        <button class="btn-icon" onclick="showPage('chat')" style="margin-left:auto;width:28px;height:28px" title="关闭"><i data-lucide="x" style="width:13px;height:13px"></i></button>
       </div>
->
+      <div style="display:flex;flex:1;overflow:hidden">
+        <div id="followupList" style="width:280px;flex-shrink:0;overflow-y:auto;border-right:1px solid var(--border);padding:4px 0"></div>
+        <div id="followupDetail" style="flex:1;overflow-y:auto;padding:20px 24px"><div style="text-align:center;color:var(--text-secondary);padding:60px 20px;font-size:14px">选择一个客户查看跟进详情</div></div>
+      </div>
+    </div>
+  </body>
+  </html>

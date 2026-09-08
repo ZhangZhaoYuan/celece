@@ -715,6 +715,23 @@ async def api_update_message(msg_id: int, data: dict = Body(...)):
     return {"status": "ok"}
 
 
+@app.post("/api/customers/{customer_id}/chat/import")
+async def api_import_chat_history(customer_id: int, data: dict = Body(...)):
+    """导入微信聊天记录"""
+    from database import get_customer, import_chat_history
+    
+    customer = get_customer(customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="客户不存在")
+    
+    chat_text = data.get("chat_text", "")
+    if not chat_text:
+        raise HTTPException(status_code=400, detail="聊天记录不能为空")
+    
+    result = import_chat_history(customer_id, chat_text)
+    return result
+
+
 # ===== 话术生成 =====
 
 def _collect_effective_script_context(recent_text: str, customer: dict, analysis_tags: list, recent: str):
@@ -849,44 +866,12 @@ async def api_generate_script(request: Request):
     # 当前时间（优先用前端传的时间，否则用服务器时间）
     current_time = data.get("current_time", "") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # 获取前端传的图片ID列表
-    uploaded_image_ids = data.get("image_ids", [])
-
     # 处理图片相关逻辑
     enriched_recent = recent
     image_results = []
 
-    # 获取该客户的所有图片
+    # 获取该客户的所有图片（用于 enrich recent，但不提前搜索本地图片库）
     customer_images = get_customer_images(customer_id)
-
-    # 如果前端传了图片ID，则只使用这些图片（按上传顺序排列，老的图片不干扰当前上下文）
-    if uploaded_image_ids:
-        img_map = {img["id"]: img for img in customer_images}
-        filtered = []
-        for pid in uploaded_image_ids:
-            if pid in img_map:
-                filtered.append(img_map[pid])
-        customer_images = filtered
-
-    # ===== 匹配本地图片库（图片索引） =====
-    local_image_matches = []
-    if analysis_tags:
-        # 用#标签作为搜索关键词
-        local_image_matches = match_images_for_script(analysis_tags, top_k=5)
-    elif uploaded_image_ids:
-        # 有上传的图片但没标签，用图片描述作为关键词
-        img_descs = []
-        for img in customer_images[:3]:
-            desc = img.get("description", "")
-            if desc:
-                img_descs.append(desc[:30])
-        if img_descs:
-            local_image_matches = match_images_for_script(img_descs, top_k=5)
-    else:
-        # 用最近消息前30字作为关键词模糊搜索
-        search_kw = recent.strip()[:30] if recent.strip() else ""
-        if search_kw:
-            local_image_matches = match_images_for_script([search_kw], top_k=3)
 
     if customer_images:
         # 构建图片描述文本
@@ -1026,7 +1011,7 @@ async def api_generate_script(request: Request):
             settings=settings,
             current_time=current_time,
             image_results=image_results,
-            local_image_matches=local_image_matches,
+            local_image_matches=None,  # 不再提前传入，等 LLM 生成后再根据 [生成图片:xxx] 搜索
             effective_refs=effective_refs,
             feedback_analysis=feedback_analysis
         )
@@ -1049,18 +1034,18 @@ async def api_generate_script(request: Request):
             if img.get('id'):
                 try: increment_image_use_count(img['id'])
                 except: pass
-    if local_image_matches:
-        for img in local_image_matches:
-            if img.get('id'):
-                try: increment_image_use_count(img['id'])
-                except: pass
     return {
         'script': result,
         'pending_images': [{'description': d.strip()} for d in pending_images if d.strip()],
         'pending_image_matches': pending_image_matches if pending_image_matches else None,
         'degraded_reason': search_data.get('degraded_reason'),
-        'local_image_matches': local_image_matches if local_image_matches else None,
-        'customer_profile': customer_profile
+        'local_image_matches': None,
+        'customer_profile': customer_profile,
+        # RAG优化数据
+        'knowledge_mode': search_data.get('mode', 'unknown'),
+        'reranker_available': search_data.get('reranker_available', False),
+        'rewritten_queries': search_data.get('rewritten_queries', []),
+        'knowledge_results_sample': knowledge_results[:3] if knowledge_results else []
         }
 
 
@@ -1098,30 +1083,14 @@ async def api_generate_script_stream(request: Request, data: dict = Body(...)):
     search_data = search_knowledge(recent, top_k=20)
     knowledge_results = search_data.get("results", [])
     current_time = data.get("current_time", "") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    uploaded_image_ids = data.get("image_ids", [])
 
     image_results = []
     customer_images = get_customer_images(customer_id)
-    if uploaded_image_ids:
-        img_map = {img["id"]: img for img in customer_images}
-        filtered = []
-        for pid in uploaded_image_ids:
-            if pid in img_map:
-                filtered.append(img_map[pid])
-        customer_images = filtered
 
     local_image_matches = []
     enriched_recent = recent
     if analysis_tags:
         local_image_matches = match_images_for_script(analysis_tags, top_k=5)
-    elif uploaded_image_ids:
-        img_descs = []
-        for img in customer_images[:3]:
-            desc = img.get("description", "")
-            if desc:
-                img_descs.append(desc[:30])
-        if img_descs:
-            local_image_matches = match_images_for_script(img_descs, top_k=5)
     else:
         search_kw = recent.strip()[:30] if recent.strip() else ""
         if search_kw:

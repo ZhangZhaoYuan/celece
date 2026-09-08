@@ -20,23 +20,57 @@ import config_manager
 
 # 系统提示词 - 从文件加载（可前端编辑）
 _SYSTEM_PROMPT_CACHE = None
+_SYSTEM_PROMPT_MTIME = 0  # 文件最后修改时间
 
 def _load_system_prompt() -> str:
-    global _SYSTEM_PROMPT_CACHE
-    if _SYSTEM_PROMPT_CACHE is not None:
+    global _SYSTEM_PROMPT_CACHE, _SYSTEM_PROMPT_MTIME
+    import os
+    # 通过 config_manager 读取文件路径
+    prompt_file = None
+    from config_manager import DATA_DIR, BASE_DIR
+    candidates = [
+        DATA_DIR / "SYSTEM_PROMPT.txt",
+        BASE_DIR / "backend" / "SYSTEM_PROMPT.txt",
+        BASE_DIR / "_internal" / "backend" / "SYSTEM_PROMPT.txt",
+    ]
+    for f in candidates:
+        if f.exists():
+            prompt_file = f
+            break
+
+    if prompt_file is None:
+        # 没有文件，使用默认提示词
+        if _SYSTEM_PROMPT_CACHE is None:
+            _SYSTEM_PROMPT_CACHE = fallback_prompt()
         return _SYSTEM_PROMPT_CACHE
-    # 通过 config_manager 读取（自动处理 data/ → backend/ → _internal/backend/ 回退链）
-    _SYSTEM_PROMPT_CACHE = config_manager.get_system_prompt().strip()
-    if _SYSTEM_PROMPT_CACHE:
+
+    # 检查文件是否被修改过（自动重载）
+    try:
+        mtime = prompt_file.stat().st_mtime
+        if mtime != _SYSTEM_PROMPT_MTIME:
+            # 文件被修改，重新加载
+            content = prompt_file.read_text(encoding="utf-8").strip()
+            if content:
+                _SYSTEM_PROMPT_CACHE = content
+                _SYSTEM_PROMPT_MTIME = mtime
+            else:
+                # 文件为空，使用默认
+                if _SYSTEM_PROMPT_CACHE is None:
+                    _SYSTEM_PROMPT_CACHE = fallback_prompt()
         return _SYSTEM_PROMPT_CACHE
-    # 如果没有文件，使用默认提示词
-    _SYSTEM_PROMPT_CACHE = fallback_prompt()
-    return _SYSTEM_PROMPT_CACHE
+    except Exception:
+        # 读取失败，返回缓存
+        return _SYSTEM_PROMPT_CACHE or fallback_prompt()
 
 
 def reload_system_prompt():
-    """重新加载提示词（前端修改后调用）"""
-    global _SYSTEM_PROMPT_CACHE
+    """重新加载提示词（前端修改后调用，已废弃：现在自动检测文件变化）"""
+    global _SYSTEM_PROMPT_MTIME
+    import os
+    from config_manager import DATA_DIR
+    prompt_file = DATA_DIR / "SYSTEM_PROMPT.txt"
+    if prompt_file.exists():
+        _SYSTEM_PROMPT_MTIME = prompt_file.stat().st_mtime
     _SYSTEM_PROMPT_CACHE = None
     return _load_system_prompt()
 
